@@ -1,0 +1,730 @@
+[
+  {
+    "question_id": 119,
+    "db_id": "financial",
+    "question": "For accounts in 1993 with statement issued after transaction, list the account ID, district name and district region.",
+    "evidence": "Records about district names could be found in A2; A3 contains the information about regions. 'POPLATEK PO OBRATU' stands for issuance after transaction",
+    "SQL": "SELECT T1.account_id, T2.A2, T2.A3 FROM account AS T1 INNER JOIN district AS T2 ON T1.district_id = T2.district_id WHERE T1.frequency = 'POPLATEK PO OBRATU' AND STRFTIME('%Y', T1.date)= '1993'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 135,
+    "db_id": "financial",
+    "question": "After making a credit card withdrawal, how many account/s with monthly issuance has a negative balance?",
+    "evidence": "Negative balance means balance < 0; Operation = 'VYBER KARTOU' stands for credit card withdraw. Frequency = 'POPLATEK MESICNE' stands for monthly issurance",
+    "SQL": "SELECT COUNT(T1.account_id) FROM trans AS T1 INNER JOIN account AS T2 ON T1.account_id = T2.account_id WHERE T1.balance < 0 AND T1.operation = 'VYBER KARTOU' AND T2.frequency = 'POPLATEK MESICNE'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 95,
+    "db_id": "financial",
+    "question": "List out the account numbers of clients who are youngest and have highest average salary?",
+    "evidence": "If the person A's birthdate < B's birthdate, it means that person B is younger than person A; A11 refers to average salary",
+    "SQL": "SELECT T1.account_id  FROM account AS T1 INNER JOIN disp AS T2 ON T1.account_id = T2.account_id INNER JOIN client AS T3 ON T2.client_id = T3.client_id INNER JOIN district AS T4 on T4.district_id = T1.district_id WHERE T2.client_id = ( SELECT client_id FROM client ORDER BY birth_date DESC LIMIT 1) GROUP BY T4.A11, T1.account_id",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 89,
+    "db_id": "financial",
+    "question": "How many accounts who choose issuance after transaction are staying in East Bohemia region?",
+    "evidence": "A3 contains the data of region; 'POPLATEK PO OBRATU' represents for 'issuance after transaction'.",
+    "SQL": "SELECT COUNT(T2.account_id) FROM district AS T1 INNER JOIN account AS T2 ON T1.district_id = T2.district_id WHERE T1.A3 = 'east Bohemia' AND T2.frequency = 'POPLATEK PO OBRATU'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 163,
+    "db_id": "financial",
+    "question": "Which district has the most accounts with loan contracts finished with no problems?",
+    "evidence": "status = 'A' refers to loan contracts finished with no problems",
+    "SQL": "SELECT T1.A2 FROM District AS T1 INNER JOIN Account AS T2 ON T1.District_id = T2.District_id INNER JOIN Loan AS T3 ON T2.Account_id = T3.Account_id WHERE T3.status = 'A' GROUP BY T1.District_id ORDER BY COUNT(T2.Account_id) DESC LIMIT 1",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 136,
+    "db_id": "financial",
+    "question": "Between 1/1/1995 and 12/31/1997, how many loans in the amount of at least 250,000 per account that chose monthly statement issuance were approved?",
+    "evidence": "Frequency = 'POPLATEK MESICNE' stands for monthly issurance",
+    "SQL": "SELECT COUNT(T1.account_id) FROM account AS T1 INNER JOIN loan AS T2 ON T1.account_id = T2.account_id WHERE T2.date BETWEEN '1995-01-01' AND '1997-12-31' AND T1.frequency = 'POPLATEK MESICNE' AND T2.amount >= 250000",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 150,
+    "db_id": "financial",
+    "question": "How many accounts in North Bohemia has made a transaction with the partner's bank being AB?",
+    "evidence": "A3 contains the region names; North Bohemia is a region.",
+    "SQL": "SELECT COUNT(T2.account_id) FROM district AS T1 INNER JOIN account AS T2 ON T1.district_id = T2.district_id INNER JOIN trans AS T3 ON T2.account_id = T3.account_id WHERE T3.bank = 'AB' AND T1.A3 = 'north Bohemia'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 145,
+    "db_id": "financial",
+    "question": "Who are the account holder identification numbers whose who have transactions on the credit card with the amount is less than the average, in 1998?",
+    "evidence": "Operation = 'VYBER KARTOU' refers to credit card withdrawal",
+    "SQL": "SELECT T1.account_id FROM trans AS T1 INNER JOIN account AS T2 ON T1.account_id = T2.account_id WHERE STRFTIME('%Y', T1.date) = '1998' AND T1.operation = 'VYBER KARTOU' AND T1.amount < (SELECT AVG(amount) FROM trans WHERE STRFTIME('%Y', date) = '1998')",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 137,
+    "db_id": "financial",
+    "question": "How many accounts have running contracts in Branch location 1?",
+    "evidence": "Status = 'C' stands for running contract, OK so far; Status = 'D' stands for running contract, client in debt",
+    "SQL": "SELECT COUNT(T1.account_id) FROM account AS T1 INNER JOIN district AS T2 ON T1.district_id = T2.district_id INNER JOIN loan AS T3 ON T1.account_id = T3.account_id WHERE T1.district_id = 1 AND (T3.status = 'C' OR T3.status = 'D')",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 175,
+    "db_id": "financial",
+    "question": "How many accounts have an owner disposition and request for a statement to be generated upon a transaction?",
+    "evidence": "Frequency = 'POPLATEK PO OBRATU' stands for issuance after transaction",
+    "SQL": "SELECT COUNT(T1.account_id) FROM account AS T1 INNER JOIN disp AS T2 ON T1.account_id = T2.account_id WHERE T2.type = 'OWNER' AND T1.frequency = 'POPLATEK PO OBRATU'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 180,
+    "db_id": "financial",
+    "question": "Please provide a list of clients who were born between 1983 and 1987 and whose account branch is in East Bohemia, along with their IDs.",
+    "evidence": "",
+    "SQL": "SELECT T1.client_id, T3.account_id FROM client AS T1 INNER JOIN district AS T2 ON T1.district_id = T2.district_id INNER JOIN disp AS T4 ON T1.client_id = T4.client_id INNER JOIN account AS T3 ON T2.district_id = T3.district_id and T4.account_id = T3.account_id WHERE T2.A3 = 'east Bohemia' AND STRFTIME('%Y', T1.birth_date) BETWEEN '1983' AND '1987'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 113,
+    "db_id": "financial",
+    "question": "For the client who applied 98832 USD loan in 1996/1/3, when was his/her birthday?",
+    "evidence": "",
+    "SQL": "SELECT T4.birth_date FROM loan AS T1 INNER JOIN account AS T2 ON T1.account_id = T2.account_id INNER JOIN disp AS T3 ON T2.account_id = T3.account_id INNER JOIN client AS T4 ON T3.client_id = T4.client_id WHERE T1.date = '1996-01-03' AND T1.amount = 98832",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 176,
+    "db_id": "financial",
+    "question": "What is the amount of debt that client number 992 has, and how is this client doing with payments?",
+    "evidence": "",
+    "SQL": "SELECT T4.amount, T4.status FROM client AS T1 INNER JOIN disp AS T2 ON T1.client_id = T2.client_id INNER JOIN account AS T3 on T2.account_id = T3.account_id INNER JOIN loan AS T4 ON T3.account_id = T4.account_id WHERE T1.client_id = 992",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 122,
+    "db_id": "financial",
+    "question": "State the district and region for loan ID '4990'.",
+    "evidence": "A2, A3 contains the information about district and region respectively.",
+    "SQL": "SELECT T2.A2, T2.A3 FROM account AS T1 INNER JOIN district AS T2 ON T1.district_id = T2.district_id INNER JOIN loan AS T3 ON T1.account_id = T3.account_id WHERE T3.loan_id = 4990",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 103,
+    "db_id": "financial",
+    "question": "Which client issued his/her card in 1994/3/3, give his/her client id.",
+    "evidence": "",
+    "SQL": "SELECT T2.client_id FROM client AS T1 INNER JOIN disp AS T2 ON T1.client_id = T2.client_id INNER JOIN card AS T3 ON T2.disp_id = T3.disp_id WHERE T3.issued = '1994-03-03'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 102,
+    "db_id": "financial",
+    "question": "State different accounts who have account opening date before 1997 and own an amount of money greater than 3000USD",
+    "evidence": "",
+    "SQL": "SELECT DISTINCT T2.account_id FROM trans AS T1 INNER JOIN account AS T2 ON T1.account_id = T2.account_id WHERE STRFTIME('%Y', T2.date) < '1997' AND T1.amount > 3000",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 153,
+    "db_id": "financial",
+    "question": "How many 'classic' cards are eligible for loan?",
+    "evidence": "when the account type = 'OWNER', it's eligible for loan",
+    "SQL": "SELECT COUNT(T1.card_id) FROM card AS T1 INNER JOIN disp AS T2 ON T1.disp_id = T2.disp_id WHERE T1.type = 'classic' AND T2.type = 'OWNER'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 158,
+    "db_id": "financial",
+    "question": "What is the district Id of the account that placed the order with the id 33333?",
+    "evidence": "",
+    "SQL": "SELECT T3.district_id FROM `order` AS T1 INNER JOIN account AS T2 ON T1.account_id = T2.account_id INNER JOIN district AS T3 ON T2.district_id = T3.district_id WHERE T1.order_id = 33333",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 179,
+    "db_id": "financial",
+    "question": "How much, in total, did client number 617 pay for all of the transactions in 1998?",
+    "evidence": "",
+    "SQL": "SELECT SUM(T3.amount) FROM client AS T1 INNER JOIN disp AS T4 ON T1.client_id = T4.client_id INNER JOIN account AS T2 ON T4.account_id = T2.account_id INNER JOIN trans AS T3 ON T2.account_id = T3.account_id WHERE STRFTIME('%Y', T3.date)= '1998' AND T1.client_id = 617",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 181,
+    "db_id": "financial",
+    "question": "Please provide the IDs of the 3 female clients with the largest loans.",
+    "evidence": "Female refers to gender = 'F'",
+    "SQL": "SELECT T1.client_id FROM client AS T1 INNER JOIN disp AS T4 on T1.client_id= T4.client_id INNER JOIN account AS T2 ON T4.account_id = T2.account_id  INNER JOIN loan AS T3 ON T2.account_id = T3.account_id and T4.account_id = T3.account_id WHERE T1.gender = 'F' ORDER BY T3.amount DESC LIMIT 3",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 91,
+    "db_id": "financial",
+    "question": "The average unemployment ratio of 1995 and 1996, which one has higher percentage?",
+    "evidence": "A12 refers to unemploymant rate 1995; A13 refers to unemploymant rate 1996",
+    "SQL": "SELECT DISTINCT IIF(AVG(A13) > AVG(A12), '1996', '1995') FROM district",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 157,
+    "db_id": "financial",
+    "question": "What is the number of committed crimes in 1995 in the district of the account with the id 532?",
+    "evidence": "A15 contains information about number of committed crimes in 1995",
+    "SQL": "SELECT T1.A15 FROM district AS T1 INNER JOIN `account` AS T2 ON T1.district_id = T2.district_id WHERE T2.account_id = 532",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 178,
+    "db_id": "financial",
+    "question": "Which kind of credit card does client number 9 possess?",
+    "evidence": "",
+    "SQL": "SELECT T3.type FROM client AS T1 INNER JOIN disp AS T2 ON T1.client_id = T2.client_id INNER JOIN card AS T3 ON T2.disp_id = T3.disp_id WHERE T1.client_id = 9",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 94,
+    "db_id": "financial",
+    "question": "List out the account numbers of female clients who are oldest and has lowest average salary, calculate the gap between this lowest average salary with the highest average salary?",
+    "evidence": "Female means gender = 'F'; A11 refers to average salary; Gap = highest average salary - lowest average salary; If the person A's birthdate > B's birthdate, it means that person B is order than person A.",
+    "SQL": "SELECT T1.account_id , ( SELECT MAX(A11) - MIN(A11) FROM district ) FROM account AS T1 INNER JOIN district AS T2 ON T1.district_id = T2.district_id INNER JOIN disp AS T3 ON T1.account_id = T3.account_id INNER JOIN client AS T4 ON T3.client_id = T4.client_id WHERE T2.district_id = ( SELECT district_id FROM client WHERE gender = 'F' ORDER BY birth_date ASC LIMIT 1 ) ORDER BY T2.A11 DESC LIMIT 1",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 116,
+    "db_id": "financial",
+    "question": "For the client whose loan was approved first in 1993/7/5, what is the increase rate of his/her account balance from 1993/3/22 to 1998/12/27?",
+    "evidence": "Increase rate of his/her account balance = [(balance of date A - balance of date B) / balance of Date B] * 100%",
+    "SQL": "SELECT CAST((SUM(IIF(T3.date = '1998-12-27', T3.balance, 0)) - SUM(IIF(T3.date = '1993-03-22', T3.balance, 0))) AS REAL) * 100 / SUM(IIF(T3.date = '1993-03-22', T3.balance, 0)) FROM loan AS T1 INNER JOIN account AS T2 ON T1.account_id = T2.account_id INNER JOIN trans AS T3 ON T3.account_id = T2.account_id WHERE T1.date = '1993-07-05'",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 125,
+    "db_id": "financial",
+    "question": "For loans contracts which are still running where client are in debt, list the district of the and the state the percentage unemployment rate increment from year 1995 to 1996.",
+    "evidence": "Unemployment increment rate in percentage = [(unemployment rate 2016 - unemployment rate 2015) / unemployment rate 2015] * 100; unemployment rate 2015 appears in the A12; unemployment rate 2016 appears in the A13; Loan contracts which are still running where client are in debt can be presented as status = 'D'",
+    "SQL": "SELECT CAST((T3.A13 - T3.A12) AS REAL) * 100 / T3.A12 FROM loan AS T1 INNER JOIN account AS T2 ON T1.account_id = T2.account_id INNER JOIN district AS T3 ON T2.district_id = T3.district_id WHERE T1.status = 'D'",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 149,
+    "db_id": "financial",
+    "question": "Please list the account types that are not eligible for loans, and the average income of residents in the district where the account is located exceeds $8000 but is no more than $9000.",
+    "evidence": "A11 represents the average salary; Salary and income share the similar meanings; when the account type = 'OWNER', it's eligible for loans",
+    "SQL": "SELECT T3.type FROM district AS T1 INNER JOIN account AS T2 ON T1.district_id = T2.district_id INNER JOIN disp AS T3 ON T2.account_id = T3.account_id WHERE T3.type != 'OWNER' AND T1.A11 BETWEEN 8000 AND 9000",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 169,
+    "db_id": "financial",
+    "question": "What was the growth rate of the total amount of loans across all accounts for a male client between 1996 and 1997?",
+    "evidence": "Growth rate = (sum of amount_1997 - sum of amount_1996) / (sum of amount_1996) * 100%; Male refers to gender = 'M'",
+    "SQL": "SELECT CAST((SUM(CASE WHEN STRFTIME('%Y', T1.date) = '1997' THEN T1.amount ELSE 0 END) - SUM(CASE WHEN STRFTIME('%Y', T1.date) = '1996' THEN T1.amount ELSE 0 END)) AS REAL) * 100 / SUM(CASE WHEN STRFTIME('%Y', T1.date) = '1996' THEN T1.amount ELSE 0 END) FROM loan AS T1 INNER JOIN account AS T2 ON T1.account_id = T2.account_id INNER JOIN disp AS T3 ON T3.account_id = T2.account_id INNER JOIN client AS T4 ON T4.client_id = T3.client_id WHERE T4.gender = 'M' AND T3.type = 'OWNER'",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 173,
+    "db_id": "financial",
+    "question": "How often does account number 3 request an account statement to be released? What was the aim of debiting 3539 in total?",
+    "evidence": "k_symbol refers to the purpose of payments",
+    "SQL": "SELECT T1.frequency, T2.k_symbol FROM account AS T1 INNER JOIN (SELECT account_id, k_symbol, SUM(amount) AS total_amount FROM `order` GROUP BY account_id, k_symbol) AS T2 ON T1.account_id = T2.account_id WHERE T1.account_id = 3 AND T2.total_amount = 3539",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 309,
+    "db_id": "toxicology",
+    "question": "List out the atom id that belongs to the TR346 molecule and how many bond type can be created by this molecule?",
+    "evidence": "",
+    "SQL": "SELECT T1.atom_id, COUNT(DISTINCT T2.bond_type),T1.molecule_id FROM atom AS T1 INNER JOIN bond AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.molecule_id = 'TR000' GROUP BY T1.atom_id, T2.bond_type",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 223,
+    "db_id": "toxicology",
+    "question": "What are the atom IDs of the bond TR000_2_5?",
+    "evidence": "TR000_2_5 is the bond id",
+    "SQL": "SELECT T.atom_id FROM connected AS T WHERE T.bond_id = 'TR000_2_5'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 326,
+    "db_id": "toxicology",
+    "question": "Which molecule consisted of Sulphur atom with double bond?",
+    "evidence": "sulphur refers to element - 's'; double bond refers to bond_type = ' = ';",
+    "SQL": "SELECT DISTINCT T1.molecule_id FROM atom AS T1 INNER JOIN bond AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.element = 's' AND T2.bond_type = '='",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 292,
+    "db_id": "toxicology",
+    "question": "Identify the atoms belong to the molecule with ID between TR010 to TR050 that contain the element carbon.",
+    "evidence": "carbon refers to element = 'c'; between TR010 to TR050 refers to substr(molecule_id, 3, 3)>=10 AND substr(molecule_id, 3, 3) <= 50",
+    "SQL": "SELECT T.atom_id FROM atom AS T WHERE T.molecule_id BETWEEN 'TR010' AND 'TR050' AND T.element = 'c'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 199,
+    "db_id": "toxicology",
+    "question": "In the molecule containing sodium atoms, how many are non-carcinogenic?",
+    "evidence": "non-carcinogenic refers to label = '-'; sodium atoms refers to element = 'na'",
+    "SQL": "SELECT COUNT(DISTINCT T2.molecule_id) FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.element = 'na' AND T2.label = '-'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 295,
+    "db_id": "toxicology",
+    "question": "How many atoms belong to the molecule that element is hydrogen and labeled with carcinogenic compound?",
+    "evidence": "label = '+' mean molecules are carcinogenic; hydrogen refers to element = h'",
+    "SQL": "SELECT COUNT(T1.atom_id) AS atomnums_h FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T2.label = '+' AND T1.element = 'h'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 336,
+    "db_id": "toxicology",
+    "question": "in molecules with triple bonds, how many of them are not carcinogenic?",
+    "evidence": "triple bond refers to bond_type = '#'; label = '-' means molecules are non-carcinogenic",
+    "SQL": "SELECT COUNT(DISTINCT T1.molecule_id) FROM molecule AS T1 INNER JOIN bond AS T2 ON T1.molecule_id = T2.molecule_id WHERE T2.bond_type = '#' AND T1.label = '-'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 323,
+    "db_id": "toxicology",
+    "question": "Is molecule TR000 is carcinogenic or not?",
+    "evidence": "label = '+' mean molecules are carcinogenic; label = '-' means molecules are non-carcinogenic",
+    "SQL": "SELECT label FROM molecule AS T WHERE T.molecule_id = 'TR000'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 325,
+    "db_id": "toxicology",
+    "question": "How many carcinogenic molecules that consisted of Nitrogen?",
+    "evidence": "nitrogen refers to element = 'n'; label = '+' mean molecules are carcinogenic;",
+    "SQL": "SELECT COUNT(DISTINCT T1.molecule_id) FROM molecule AS T1 INNER JOIN atom AS T2 ON T1.molecule_id = T2.molecule_id WHERE T2.element = 'n' AND T1.label = '+'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 279,
+    "db_id": "toxicology",
+    "question": "What is the label for bond ID TR001_10_11?",
+    "evidence": "label = '+' mean molecules are carcinogenic; label = '-' means molecules are non-carcinogenic",
+    "SQL": "SELECT T2.label FROM bond AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.bond_id = 'TR001_10_11'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 276,
+    "db_id": "toxicology",
+    "question": "Write down the atom IDs of the first and second atoms of triple bond type molecules.",
+    "evidence": "first atom refers to atom_id; second atom refers to atom_id2; triple bond refers to bond_type = '#';",
+    "SQL": "SELECT T2.atom_id, T2.atom_id2 FROM bond AS T1 INNER JOIN connected AS T2 ON T1.bond_id = T2.bond_id WHERE T1.bond_type = '#'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 239,
+    "db_id": "toxicology",
+    "question": "How many connections does the atom 19 have?",
+    "evidence": "connections refers to bond_id; atom 19 refers to atom_id like 'TR%_19';",
+    "SQL": "SELECT COUNT(T.bond_id) FROM connected AS T WHERE SUBSTR(T.atom_id, -2) = '19'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 260,
+    "db_id": "toxicology",
+    "question": "Calculate the total atoms with triple-bond molecules containing the element phosphorus or bromine.",
+    "evidence": "triple bond refers to bond_type = '#'; phosphorus refers to element = 'p'; bromine refers to element = 'br'",
+    "SQL": "SELECT COUNT(T1.atom_id) FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id INNER JOIN bond AS T3 ON T2.molecule_id = T3.molecule_id WHERE T3.bond_type = '#' AND T1.element IN ('p', 'br')",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 246,
+    "db_id": "toxicology",
+    "question": "List the bond type and the bond ID of the atom 45.",
+    "evidence": "bond ID of atom 45 refers to SUBSTR(atom_id, 7, 2) + 0 = 45; double bond refers to bond_type = ' = '; single bond refers to bond_type = '-'; triple bond refers to bond_type = '#';",
+    "SQL": "SELECT T1.bond_type, T1.bond_id FROM bond AS T1 INNER JOIN connected AS T2 ON T1.bond_id = T2.bond_id WHERE SUBSTR(T2.atom_id, 7, 2) = '45'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 232,
+    "db_id": "toxicology",
+    "question": "Please list top three molecules that have single bonds between two atoms and are not carcinogenic in alphabetical order.",
+    "evidence": "label = '-' means molecules are not carcinogenic; single type bond refers to bond_type = '-'; list top three molecules refers to return molecule_id and order by molecule_id;",
+    "SQL": "SELECT DISTINCT T2.molecule_id FROM bond AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.bond_type = '-' AND T2.label = '-' ORDER BY T2.molecule_id LIMIT 3",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 283,
+    "db_id": "toxicology",
+    "question": "Identify whether the chemical compound that contains Calcium is carcinogenic.",
+    "evidence": "calcium refers to element = 'ca'; label = '+' mean molecules are carcinogenic; label = '-' means molecules are non-carcinogenic;",
+    "SQL": "SELECT T2.label AS flag_carcinogenic FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.element = 'ca'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 317,
+    "db_id": "toxicology",
+    "question": "Calculate the percentage of carcinogenic molecules which contain the Chlorine element.",
+    "evidence": "label = '+' mean molecules are carcinogenic; percentage = DIVIDE(SUM(label = '+' and element = 'cl'), COUNT(molecule_id)) as percentage",
+    "SQL": "SELECT COUNT(CASE WHEN T2.label = '+' AND T1.element = 'cl' THEN T2.molecule_id ELSE NULL END) * 100 / COUNT(T2.molecule_id) FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 213,
+    "db_id": "toxicology",
+    "question": "What type of bond is there between the atoms TR004_8 and TR004_20?",
+    "evidence": "type of bond refers to bond_type; between the atoms TR004_8 and TR004_20 refers to atom_id = 'TR004_8' AND atom_id2 = 'TR004_20' OR another way around",
+    "SQL": "SELECT T1.bond_type FROM bond AS T1 INNER JOIN connected AS T2 ON T1.bond_id = T2.bond_id WHERE T2.atom_id = 'TR004_8' AND T2.atom_id2 = 'TR004_20' OR T2.atom_id2 = 'TR004_8' AND T2.atom_id = 'TR004_20'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 320,
+    "db_id": "toxicology",
+    "question": "What is the type of the bond which is presenting the connection between two atoms TR000_1 and TR000_2?",
+    "evidence": "type of bond refers to bond_type; double bond refers to bond_type = ' = '; single bond refers to bond_type = '-'; triple bond refers to bond_type = '#';",
+    "SQL": "SELECT T1.bond_type FROM bond AS T1 INNER JOIN connected AS T2 ON T1.bond_id = T2.bond_id WHERE T2.atom_id = 'TR000_1' AND T2.atom_id2 = 'TR000_2'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 338,
+    "db_id": "toxicology",
+    "question": "What is the atom ID of double bonded carbon in TR012 molecule?",
+    "evidence": "carbon refers to element = 'c'; double bond refers to bond_type = ' = ';",
+    "SQL": "SELECT T1.atom_id FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id INNER JOIN bond AS T3 ON T2.molecule_id = T3.molecule_id WHERE T2.molecule_id = 'TR012' AND T3.bond_type = '=' AND T1.element = 'c'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 327,
+    "db_id": "toxicology",
+    "question": "Which non-carcinogenic molecules consisted more than 5 atoms?",
+    "evidence": "label = '-' means molecules are non-carcinogenic; molecules consisted more than 5 atoms refers to COUNT(molecule_id) > 5",
+    "SQL": "SELECT T.molecule_id FROM ( SELECT T1.molecule_id, COUNT(T2.atom_id) FROM molecule AS T1 INNER JOIN atom AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.label = '-' GROUP BY T1.molecule_id HAVING COUNT(T2.atom_id) > 5 ) t",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 267,
+    "db_id": "toxicology",
+    "question": "List down the bond type for molecules from molecule id TR000 to TR050.",
+    "evidence": "double bond refers to bond_type = ' = '; single bond refers to bond_type = '-'; triple bond refers to bond_type = '#';",
+    "SQL": "SELECT T2.molecule_id, T2.bond_type FROM molecule AS T1 INNER JOIN bond AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.molecule_id BETWEEN 'TR000' AND 'TR050'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 298,
+    "db_id": "toxicology",
+    "question": "Calculate the percentage of molecules containing carcinogenic compounds that element is hydrogen.",
+    "evidence": "hydrogen refers to element = 'h'; label = '+' mean molecules are carcinogenic; percentage = DIVIDE(SUM(label = '+' and element = 'h'), COUNT(molecule_id)) * 100.0",
+    "SQL": "SELECT CAST(COUNT(CASE WHEN T1.element = 'h' AND T2.label = '+' THEN T2.molecule_id ELSE NULL END) AS REAL) * 100 / COUNT(T2.molecule_id) FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 282,
+    "db_id": "toxicology",
+    "question": "What is the ratio of Hydrogen elements in molecule ID TR006? List the ratio with its label.",
+    "evidence": "hydrogen refers to element = 'h'; ratio = DIVIDE(SUM(element = 'h'), count(element)) where molecule_id = 'TR006' ; label = '+' mean molecules are carcinogenic; label = '-' means molecules are non-carcinogenic",
+    "SQL": "WITH SubQuery AS (SELECT DISTINCT T1.atom_id, T1.element, T1.molecule_id, T2.label FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T2.molecule_id = 'TR006') SELECT CAST(COUNT(CASE WHEN element = 'h' THEN atom_id ELSE NULL END) AS REAL) / (CASE WHEN COUNT(atom_id) = 0 THEN NULL ELSE COUNT(atom_id) END) AS ratio, label FROM SubQuery GROUP BY label",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 249,
+    "db_id": "toxicology",
+    "question": "What are the elements of the atoms of TR144_8_19?",
+    "evidence": "TR144_8_19 is the bond id; ",
+    "SQL": "SELECT T2.element FROM connected AS T1 INNER JOIN atom AS T2 ON T1.atom_id = T2.atom_id WHERE T1.bond_id = 'TR144_8_19'",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 319,
+    "db_id": "toxicology",
+    "question": "How many elements are contained in bond_id TR001_3_4?",
+    "evidence": "element = 'cl' means Chlorine; element = 'c' means Carbon; element = 'h' means Hydrogen; element = 'o' means Oxygen, element = 's' means Sulfur; element = 'n' means Nitrogen, element = 'p' means Phosphorus, element = 'na' means Sodium, element = 'br' means Bromine, element = 'f' means Fluorine; element = 'i' means Iodine; element = 'sn' means Tin; element = 'pb' means Lead; element = 'te' means Tellurium; element = 'ca' means Calcium",
+    "SQL": "SELECT COUNT(DISTINCT T1.element) FROM atom AS T1 INNER JOIN connected AS T2 ON T1.atom_id = T2.atom_id WHERE T2.bond_id = 'TR001_3_4'",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 212,
+    "db_id": "toxicology",
+    "question": "Which element is the least numerous in non-carcinogenic molecules?",
+    "evidence": "label = '-' means molecules are non-carcinogenic; least numerous refers to MIN(COUNT(element));",
+    "SQL": "SELECT T.element FROM (SELECT T1.element, COUNT(DISTINCT T1.molecule_id) FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T2.label = '-' GROUP BY T1.element ORDER BY COUNT(DISTINCT T1.molecule_id) ASC LIMIT 1) t",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 219,
+    "db_id": "toxicology",
+    "question": "What is the percentage of carcinogenic molecules in triple type bonds?",
+    "evidence": "label = '+' mean molecules are carcinogenic; triple bond refers to bond_type = '#'; percentage = DIVIDE(SUM(bond_type = '#') * 100, COUNT(bond_id)) as percent where label = '+'",
+    "SQL": "SELECT CAST(COUNT(DISTINCT CASE WHEN T2.label = '+' THEN T2.molecule_id ELSE NULL END) AS REAL) * 100 / COUNT(DISTINCT T2.molecule_id) FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id INNER JOIN bond AS T3 ON T2.molecule_id = T3.molecule_id WHERE T3.bond_type = '#'",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 328,
+    "db_id": "toxicology",
+    "question": "List all the elements with double bond, consisted in molecule TR024.",
+    "evidence": "double bond refers to bond_type = '='; element = 'cl' means Chlorine; element = 'c' means Carbon; element = 'h' means Hydrogen; element = 'o' means Oxygen, element = 's' means Sulfur; element = 'n' means Nitrogen, element = 'p' means Phosphorus, element = 'na' means Sodium, element = 'br' means Bromine, element = 'f' means Fluorine; element = 'i' means Iodine; element = 'sn' means Tin; element = 'pb' means Lead; element = 'te' means Tellurium; element = 'ca' means Calcium",
+    "SQL": "SELECT T1.element FROM atom AS T1 INNER JOIN bond AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.molecule_id = 'TR024' AND T2.bond_type = '='",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 290,
+    "db_id": "toxicology",
+    "question": "Which toxic element can be found in the molecule TR151?",
+    "evidence": "element = 'cl' means Chlorine; element = 'c' means Carbon; element = 'h' means Hydrogen; element = 'o' means Oxygen, element = 's' means Sulfur; element = 'n' means Nitrogen, element = 'p' means Phosphorus, element = 'na' means Sodium, element = 'br' means Bromine, element = 'f' means Fluorine; element = 'i' means Iodine; element = 'sn' means Tin; element = 'pb' means Lead; element = 'te' means Tellurium; element = 'ca' means Calcium",
+    "SQL": "SELECT DISTINCT T.element FROM atom AS T WHERE T.molecule_id = 'TR151'",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 302,
+    "db_id": "toxicology",
+    "question": "Name the elements that comprise the atoms of bond TR001_2_4.",
+    "evidence": "element = 'cl' means Chlorine; element = 'c' means Carbon; element = 'h' means Hydrogen; element = 'o' means Oxygen, element = 's' means Sulfur; element = 'n' means Nitrogen, element = 'p' means Phosphorus, element = 'na' means Sodium, element = 'br' means Bromine, element = 'f' means Fluorine; element = 'i' means Iodine; element = 'sn' means Tin; element = 'pb' means Lead; element = 'te' means Tellurium; element = 'ca' means Calcium",
+    "SQL": "SELECT DISTINCT T1.element FROM atom AS T1 INNER JOIN connected AS T2 ON T1.atom_id = T2.atom_id WHERE T2.bond_id = 'TR001_2_4'",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 306,
+    "db_id": "toxicology",
+    "question": "Which molecules have triple bonds and list all the elements they contain.",
+    "evidence": "triple bond refers to bond_type = '#'; element = 'cl' means Chlorine; element = 'c' means Carbon; element = 'h' means Hydrogen; element = 'o' means Oxygen, element = 's' means Sulfur; element = 'n' means Nitrogen, element = 'p' means Phosphorus, element = 'na' means Sodium, element = 'br' means Bromine, element = 'f' means Fluorine; element = 'i' means Iodine; element = 'sn' means Tin; element = 'pb' means Lead; element = 'te' means Tellurium; element = 'ca' means Calcium",
+    "SQL": "SELECT DISTINCT T1.molecule_id, T2.element FROM bond AS T1 INNER JOIN atom AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.bond_type = '#'",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 334,
+    "db_id": "toxicology",
+    "question": "What is the element with the atom ID of TR004_7 in molecule that is not carcinogenic?",
+    "evidence": "label = '-' means molecules are non-carcinogenic; element = 'cl' means Chlorine; element = 'c' means Carbon; element = 'h' means Hydrogen; element = 'o' means Oxygen, element = 's' means Sulfur; element = 'n' means Nitrogen, element = 'p' means Phosphorus, element = 'na' means Sodium, element = 'br' means Bromine, element = 'f' means Fluorine; element = 'i' means Iodine; element = 'sn' means Tin; element = 'pb' means Lead; element = 'te' means Tellurium; element = 'ca' means Calcium",
+    "SQL": "SELECT T1.element FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.atom_id = 'TR004_7' AND T2.label = '-'",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 230,
+    "db_id": "toxicology",
+    "question": "What are the elements of the toxicology and label of molecule TR060?",
+    "evidence": "TR060 is the molecule id; ",
+    "SQL": "SELECT DISTINCT T1.element, T2.label FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T2.molecule_id = 'TR060'",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 207,
+    "db_id": "toxicology",
+    "question": "What elements are in a double type bond?",
+    "evidence": "double type bond refers to bond_type = '=';",
+    "SQL": "SELECT DISTINCT T1.element FROM atom AS T1 INNER JOIN bond AS T2 ON T1.molecule_id = T2.molecule_id INNER JOIN connected AS T3 ON T1.atom_id = T3.atom_id WHERE T2.bond_type = '='",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 699,
+    "db_id": "codebase_community",
+    "question": "When did the user known as 'IrishStat' create his or her account?",
+    "evidence": "DisplayName = 'IrishStat'; when create his or her account refers to CreationDate;",
+    "SQL": "SELECT CreationDate FROM users WHERE DisplayName = 'IrishStat'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 714,
+    "db_id": "codebase_community",
+    "question": "List the comments commented by the user with a username of Harvey Motulsky.",
+    "evidence": "comments refer to Text; username of Harvey Motulsky refers to DisplayName = 'Harvey Motulsky';",
+    "SQL": "SELECT T1.Text FROM comments AS T1 INNER JOIN users AS T2 ON T1.UserId = T2.Id WHERE T2.DisplayName = 'Harvey Motulsky'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 549,
+    "db_id": "codebase_community",
+    "question": "From which post is the tag \"bayesian\" excerpted from? Please give the body of the post.",
+    "evidence": "\"bayesian\" is the TagName; excerpt from refers to ExcerptPostId",
+    "SQL": "SELECT T2.Body FROM tags AS T1 INNER JOIN posts AS T2 ON T2.Id = T1.ExcerptPostId WHERE T1.TagName = 'bayesian'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 661,
+    "db_id": "codebase_community",
+    "question": "How old is the most influential user?",
+    "evidence": "How old describes age; the most influential refers to user where MAX(Reputation);",
+    "SQL": "SELECT Age FROM users WHERE Reputation = ( SELECT MAX(Reputation) FROM users )",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 558,
+    "db_id": "codebase_community",
+    "question": "How many votes did the user No.58 take on 2010/7/19?",
+    "evidence": "user no. 58 refers to UserId = 58; on 2010/7/19 refers to CreationDate = '2010-07-19'",
+    "SQL": "SELECT COUNT(Id) FROM votes WHERE UserId = 58 AND CreationDate = '2010-07-19'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 611,
+    "db_id": "codebase_community",
+    "question": "Mention the reputation of users who had obtained the badge on 7/19/2010 7:39:08 PM.",
+    "evidence": "on 7/19/2010 7:39:08 PM refers to Date = '2010-07-19 19:39:08.0'",
+    "SQL": "SELECT T1.Reputation FROM users AS T1 INNER JOIN badges AS T2 ON T1.Id = T2.UserId WHERE T2.Date = '2010-07-19 19:39:08.0'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 621,
+    "db_id": "codebase_community",
+    "question": "What are the name of badges that users who have the lowest reputation obtained?",
+    "evidence": "lowest reputation refers to Min(Reputation); user refers to UserId",
+    "SQL": "SELECT T2.Name FROM users AS T1 INNER JOIN badges AS T2 ON T1.Id = T2.UserId WHERE T1.Reputation = (SELECT MIN(Reputation) FROM users)",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 588,
+    "db_id": "codebase_community",
+    "question": "Give the total number of comments posted by user ID 13.",
+    "evidence": "",
+    "SQL": "SELECT COUNT(Id) FROM comments WHERE UserId = 13",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 592,
+    "db_id": "codebase_community",
+    "question": "How many users are awarded with more than 5 badges?",
+    "evidence": "more than 5 badges refers to Count (Name) > 5; user refers to UserId",
+    "SQL": "SELECT COUNT(UserId) FROM ( SELECT UserId, COUNT(Name) AS num FROM badges GROUP BY UserId ) T WHERE T.num > 5",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 631,
+    "db_id": "codebase_community",
+    "question": "How many posts were created by Daniel Vassallo?",
+    "evidence": "DisplayName = 'Daniel Vassallo';",
+    "SQL": "SELECT COUNT(T1.Id) FROM users AS T1 INNER JOIN postHistory AS T2 ON T1.Id = T2.UserId WHERE T1.DisplayName = 'Daniel Vassallo'",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 589,
+    "db_id": "codebase_community",
+    "question": "Which user ID has the highest reputation?",
+    "evidence": "highest reputation refers to Max(Reputation)",
+    "SQL": "SELECT Id FROM users WHERE Reputation = ( SELECT MAX(Reputation) FROM users )",
+    "difficulty": "simple"
+  },
+  {
+    "question_id": 685,
+    "db_id": "codebase_community",
+    "question": "Identify the total views on the post 'Computer Game Datasets'. Name the user who posted it last time.",
+    "evidence": "total views refer to ViewCount; Name the user refers to DisplayName; post 'Computer Game Datasets' refers to Text = 'Computer Game Datasets';",
+    "SQL": "SELECT T2.ViewCount, T3.DisplayName FROM postHistory AS T1 INNER JOIN posts AS T2 ON T1.PostId = T2.Id INNER JOIN users AS T3 ON T2.LastEditorUserId = T3.Id WHERE T1.Text = 'Computer Game Datasets'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 571,
+    "db_id": "codebase_community",
+    "question": "For the user No.24, how many times is the number of his/her posts compared to his/her votes?",
+    "evidence": "user no. 24 refers to UserId = OwnerUserId = '24'; times of his/her post than votes = Divide (Count(post.Id), Count(votes.Id))",
+    "SQL": "SELECT CAST(COUNT(T2.Id) AS REAL) / COUNT(DISTINCT T1.Id) FROM votes AS T1 INNER JOIN posts AS T2 ON T1.UserId = T2.OwnerUserId WHERE T1.UserId = 24",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 708,
+    "db_id": "codebase_community",
+    "question": "List the creation date and age of the user that commented with webiste.",
+    "evidence": "commented with webiste refers to the value contains 'http://'",
+    "SQL": "SELECT T2.CreationDate, T2.Age FROM comments AS T1 INNER JOIN users AS T2 ON T1.UserId = T2.Id WHERE T1.text LIKE '%http://%'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 633,
+    "db_id": "codebase_community",
+    "question": "Which post by slashnick has the most answers count? State the post ID.",
+    "evidence": "most answers count refers to MAX(AnswerCount); post by slashnick refers to DisplayName = 'slashnick';",
+    "SQL": "SELECT T2.PostId FROM users AS T1 INNER JOIN postHistory AS T2 ON T1.Id = T2.UserId INNER JOIN posts AS T3 ON T2.PostId = T3.Id WHERE T1.DisplayName = 'slashnick' ORDER BY T3.AnswerCount DESC LIMIT 1",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 694,
+    "db_id": "codebase_community",
+    "question": "Provide the text of the latest 10 comments to the post with the title 'Analysing wind data with R' and the display name of the user who left it.",
+    "evidence": "the latest comment refers to MAX(CreationDate);",
+    "SQL": "SELECT T3.Text, T1.DisplayName FROM users AS T1 INNER JOIN posts AS T2 ON T1.Id = T2.OwnerUserId INNER JOIN comments AS T3 ON T2.Id = T3.PostId WHERE T2.Title = 'Analysing wind data with R' ORDER BY T1.CreationDate DESC LIMIT 10",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 652,
+    "db_id": "codebase_community",
+    "question": "List the post IDs and badge names of the user Samuel in 2013.",
+    "evidence": "Samuel refers to UserDisplayName; YEAR(CreationDate) = 2013 relates to PostId; YEAR(Date) = 2013 relates to the badge;",
+    "SQL": "SELECT T1.PostId, T2.Name FROM postHistory AS T1 INNER JOIN badges AS T2 ON T1.UserId = T2.UserId WHERE T1.UserDisplayName = 'Samuel' AND STRFTIME('%Y', T1.CreationDate) = '2013' AND STRFTIME('%Y', T2.Date) = '2013'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 716,
+    "db_id": "codebase_community",
+    "question": "Among the comments with scores between 5 to 10, what is the percentage of the users with 0 up votes?",
+    "evidence": "percentage = DIVIDE(COUNT(UserId where UpVotes = 0 and Score BETWEEN 5 and 10))*100, (COUNT(UserId where Score BETWEEN 5 and 10));",
+    "SQL": "SELECT CAST(SUM(IIF(T1.UpVotes = 0, 1, 0)) AS REAL) * 100/ COUNT(T1.Id) AS per FROM users AS T1 INNER JOIN comments AS T2 ON T1.Id = T2.UserId WHERE T2.Score BETWEEN 5 AND 10",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 563,
+    "db_id": "codebase_community",
+    "question": "User No.3025 gave a comment at 20:29:39 on 2014/4/23 to a post, how many favorite counts did that post get?",
+    "evidence": "user no. 3025 refers to UserId = '3025'; comment at 20:29:39 on 2014/4/23 refers to CreationDate = '2014/4/23 20:29:39.0'",
+    "SQL": "SELECT T1.FavoriteCount FROM posts AS T1 INNER JOIN comments AS T2 ON T1.Id = T2.PostId WHERE T2.CreationDate = '2014-04-23 20:29:39.0' AND T2.UserId = 3025",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 635,
+    "db_id": "codebase_community",
+    "question": "How many posts by Matt Parker have more than 4 votes?",
+    "evidence": "more than 4 votes refer to PostId > 4; DisplayName = 'Matt Parker';",
+    "SQL": "SELECT COUNT(T1.Id) FROM users AS T1 INNER JOIN postHistory AS T2 ON T1.Id = T2.UserId INNER JOIN posts AS T3 ON T2.PostId = T3.Id INNER JOIN votes AS T4 ON T4.PostId = T3.Id WHERE T1.DisplayName = 'Matt Parker' GROUP BY T2.PostId, T4.Id HAVING COUNT(T4.Id) > 4",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 572,
+    "db_id": "codebase_community",
+    "question": "How many views did the post titled 'Integration of Weka and/or RapidMiner into Informatica PowerCenter/Developer' get?",
+    "evidence": "\"Integration of Weka and/or RapidMiner into Informatica PowerCenter/Developer\" is the Title of post; views refers to ViewCount",
+    "SQL": "SELECT ViewCount FROM posts WHERE Title = 'Integration of Weka and/or RapidMiner into Informatica PowerCenter/Developer'",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 637,
+    "db_id": "codebase_community",
+    "question": "State all the tags used by Mark Meckes in his posts that doesn't have comments.",
+    "evidence": "used by Mark Meckes refers to DisplayName = 'Mark Meckes'; Doen't have comments refers to CommentCount = 0;",
+    "SQL": "SELECT T3.Tags FROM users AS T1 INNER JOIN postHistory AS T2 ON T1.Id = T2.UserId INNER JOIN posts AS T3 ON T3.Id = T2.PostId WHERE T1.DisplayName = 'Mark Meckes' AND T3.CommentCount = 0",
+    "difficulty": "moderate"
+  },
+  {
+    "question_id": 586,
+    "db_id": "codebase_community",
+    "question": "Which user added a bounty amount of 50 to the post title mentioning variance?",
+    "evidence": "bounty amount of 50 refers to BountyAmount = 50; user refers to DisplayName; title mentioning variance refers to Title include 'variance'",
+    "SQL": "SELECT T3.DisplayName, T1.Title FROM posts AS T1 INNER JOIN votes AS T2 ON T1.Id = T2.PostId INNER JOIN users AS T3 ON T3.Id = T2.UserId WHERE T2.BountyAmount = 50 AND T1.Title LIKE '%variance%'",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 598,
+    "db_id": "codebase_community",
+    "question": "What is the percentage difference of student badges given during 2010 and 2011?",
+    "evidence": "student badges refers to badge's name = 'Student'; during 2010 refers to Year(Date) = 2010; during 2011 refers to Year(Date) = 2011; percentage difference = Subtract (Divide(Count(Name where Year(Date) = 2010), Count (Name)) *100, Divide(Count(Name where Year(Date) = 2011), Count(Name)) * 100)",
+    "SQL": "SELECT CAST(SUM(IIF(STRFTIME('%Y', Date) = '2010', 1, 0)) AS REAL) * 100 / COUNT(Id) - CAST(SUM(IIF(STRFTIME('%Y', Date) = '2011', 1, 0)) AS REAL) * 100 / COUNT(Id) FROM badges WHERE Name = 'Student'",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 634,
+    "db_id": "codebase_community",
+    "question": "Among posts by Harvey Motulsky and Noah Snyder, which one has higher popularity?",
+    "evidence": "Has higher popularity means the post has higher view count ; calculation = MAX(SUM(ViewCount)) where DisplayName = 'Harvey Motulsky' OR DisplayName = 'Noah Snyder';",
+    "SQL": "SELECT T1.DisplayName FROM users AS T1 INNER JOIN postHistory AS T2 ON T1.Id = T2.UserId INNER JOIN posts AS T3 ON T2.PostId = T3.Id WHERE T1.DisplayName = 'Harvey Motulsky' OR T1.DisplayName = 'Noah Snyder' GROUP BY T1.DisplayName ORDER BY SUM(T3.ViewCount) DESC LIMIT 1",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 639,
+    "db_id": "codebase_community",
+    "question": "Based on posts posted by Community, calculate the percentage of posts that use the R language.",
+    "evidence": "DIVIDE(COUNT(PostId WHERE TagName = 'r')), (COUNT(PostId WHERE DisplayName = 'Community')) as percentage; R language refers to tagname = 'r'",
+    "SQL": "SELECT CAST(SUM(IIF(T3.TagName = 'r', 1, 0)) AS REAL) * 100 / COUNT(T1.Id) FROM users AS T1 INNER JOIN postHistory AS T2 ON T1.Id = T2.UserId INNER JOIN tags AS T3 ON T3.ExcerptPostId = T2.PostId WHERE T1.DisplayName = 'Community'",
+    "difficulty": "challenging"
+  },
+  {
+    "question_id": 701,
+    "db_id": "codebase_community",
+    "question": "Among all the posts posted by the most influential user, identify the percentage with a score above 50.",
+    "evidence": "The higher reputation the user has the more influence; percentage = DIVIDE(COUNT(stats_posts.Id where Score > 50 and MAX(Reputation))), COUNT(stats_posts.Id where MAX(Reputation));",
+    "SQL": "SELECT CAST(SUM(CASE WHEN T2.Score > 50 THEN 1 ELSE 0 END) AS REAL) * 100 / COUNT(T1.Id) FROM users T1 INNER JOIN posts T2 ON T1.Id = T2.OwnerUserId INNER JOIN ( SELECT MAX(Reputation) AS max_reputation FROM users ) T3 ON T1.Reputation = T3.max_reputation",
+    "difficulty": "challenging"
+  }
+]

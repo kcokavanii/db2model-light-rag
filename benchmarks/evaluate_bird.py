@@ -60,6 +60,7 @@ def run_evaluation(predictions: Dict[str, str], answer_file: str, db_url: str):
 
             results.append(
                 {
+                    "db_id": db_id,
                     "question_id": question_id,
                     "gold_sql": gold_sql,
                     "predicted_sql": predicted_sql,
@@ -91,6 +92,7 @@ def run_evaluation(predictions: Dict[str, str], answer_file: str, db_url: str):
 
             results.append(
                 {
+                    "db_id": db_id, 
                     "question_id": question_id,
                     "gold_sql": gold_sql,
                     "predicted_sql": predicted_sql,
@@ -105,6 +107,7 @@ def run_evaluation(predictions: Dict[str, str], answer_file: str, db_url: str):
             )
             results.append(
                 {
+                    "db_id": db_id, 
                     "question_id": question_id,
                     "gold_sql": gold_sql,
                     "predicted_sql": predicted_sql,
@@ -135,6 +138,12 @@ def run_evaluation(predictions: Dict[str, str], answer_file: str, db_url: str):
         subset = [r for r in results if r["difficulty"] == diff]
         by_difficulty[diff] = accuracy(subset)
 
+    # Группировка по БД
+    by_database = {}
+    for db in set(r.get("db_id", "unknown") for r in results):
+        subset = [r for r in results if r.get("db_id") == db]
+        by_database[db] = accuracy(subset)
+
     false_ambiguous = sum(
         1 for r in results if r["predicted_sql"] == "ambiguous"
     )
@@ -147,6 +156,7 @@ def run_evaluation(predictions: Dict[str, str], answer_file: str, db_url: str):
     report = {
         "overall_accuracy": total_acc,
         "accuracy_by_difficulty": by_difficulty,
+        "accuracy_by_database": by_database,
         "false_ambiguous": false_ambiguous,
         "false_ambiguous_rate": false_ambiguous_rate,
         "total": len(results),
@@ -167,6 +177,10 @@ def print_evaluation_report(report: dict):
     print("Accuracy by difficulty:")
     for diff, acc in sorted(report["accuracy_by_difficulty"].items()):
         print(f"  {diff:<12}: {acc:.2f}%")
+    print()
+    print("\nAccuracy by database:")
+    for db, acc in sorted(report["accuracy_by_database"].items()):
+        print(f"  {db:<20}: {acc:.2f}%")
     print()
 
     print(f"False ambiguous predicted : {report['false_ambiguous']}")
