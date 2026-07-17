@@ -470,17 +470,18 @@ class Text2SQLGenerator:
 
         if ambiguity_check["status"] == "success" and ambiguity_check["ambiguous"]:
             logger.info(f"Запрос неоднозначен. Требуется уточнение по причине: {ambiguity_check['clarification_needed']}")
-            return {"status": "ambiguous"}
+            return {"status": "ambiguous", "query": "ambiguous"}
 
         if ambiguity_check["status"] == "error":
             logger.info("Произошла ошибка при проверка неоднозначности.")
-            return {"status": "error"}
+            return {"status": "error", "query": "error"}
 
 
         # Main query generation
         retries = 0
         success = False
         raw_sql = ""
+        final_result = {"status": "error", "query": "error"}
 
         while not success and retries < MAX_RETRIES:
             logger.info(
