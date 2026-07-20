@@ -1,0 +1,5 @@
+db_id,EX_percent,prompt_tokens_per_query,total_queries
+codebase_community,22.22,2200,27
+financial,10.34,2200,29
+toxicology,31.43,2200,35
+OVERALL,21.98,2200,91
