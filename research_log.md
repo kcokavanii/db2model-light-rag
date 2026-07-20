@@ -74,7 +74,32 @@
    - Moderate: 18.18%
    - Challenging: 4.35%
 
+#### Ручная сверка eval-harness (10 примеров)
 
+Для верификации корректности работы eval-harness была проведена ручная сверка 
+10 примеров (стратифицированная выборка по 3 целевым БД и типам результатов).
+
+- Выбрано 4 правильных ответа (score=True), 4 неправильных (score=False), 
+  1 ambiguous, 1 с ошибкой выполнения
+
+**Результаты:**
+
+| question_id | db_id | Gold Results | Predicted Results | Совпадение |
+|---|---|---|---|---|---|
+| 327 | toxicology | False | False | + |
+| 320 | toxicology | True | True | + |
+| 119 | financial | Error  | Error | + |
+| 137 | financial | True | True | + |
+| 163 | financial | True | True | + |
+| 89 | financial | False | False | + |
+| 135 | financial | False | False | + |
+| 558 | codebase_community | True | True | + |
+| 714 | codebase_community | False | False | + |
+| 708 | codebase_community | Ambiguous | Ambiguous | + |
+
+**Вывод:** Расхождений между автоматической оценкой и ручной проверкой не выявлено. 
+Eval-harness корректно обрабатывает все типы исходов (успех, синтаксические ошибки, 
+логические расхождения и ложные срабатывания ambiguous). Метрика EX достоверна.
 
 
 ### Эксперимент 2: Light-RAG (Week 3)
