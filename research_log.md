@@ -85,7 +85,7 @@
 **Результаты:**
 
 | question_id | db_id | Gold Results | Predicted Results | Совпадение |
-|---|---|---|---|---|---|
+|---|---|---|---|---|
 | 327 | toxicology | False | False | + |
 | 320 | toxicology | True | True | + |
 | 119 | financial | Error  | Error | + |
