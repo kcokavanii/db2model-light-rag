@@ -153,11 +153,16 @@ class DatabaseExplorer:
         if not row:
             return {}
         
+        most_common_3 = []
+        if row[3]: 
+            vals = row[3].strip('{}').split(',')
+            most_common_3 = [v for v in vals[:3] if v]
+        
         return {
             'n_distinct': row[0],
             'null_frac': row[1],
             'avg_width': row[2],
-            'most_common_vals': row[3],
+            'most_common_vals': most_common_3,
             'most_common_freqs': row[4],
             'histogram_bounds': row[5]
         }
