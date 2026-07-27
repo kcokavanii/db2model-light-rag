@@ -1,5 +1,5 @@
-db_id,EX_percent,prompt_tokens_per_query,total_queries
-codebase_community,22.22,2200,27
-financial,10.34,2200,29
-toxicology,31.43,2200,35
-OVERALL,21.98,2200,91
+db_id,EX_percent,VES_percent,prompt_tokens_per_query,total_queries
+codebase_community,18.52,15.74,2325,27
+financial,13.79,11.21,2325,29
+toxicology,31.43,25.00,2325,35
+OVERALL,21.98,17.86,2325,91
