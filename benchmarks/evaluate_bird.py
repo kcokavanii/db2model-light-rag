@@ -247,13 +247,28 @@ def run_evaluation(predictions: Dict[str, str], answer_file: str, db_url: str, i
         by_database_ex[db] = calc_metric(subset, "score")
         by_database_ves[db] = calc_metric(subset, "ves_reward")
 
+    # ---- Ambiguity analysis ----
+    # False ambiguous: model refused to answer, but gold SQL exists
     false_ambiguous = sum(
-        1 for r in results if r["predicted_sql"] == "ambiguous"
+        1 for r in results 
+        if r["predicted_sql"] == "ambiguous" and r["gold_sql"] != "ambiguous"
+    )
+    
+    # True ambiguous: both model and gold agree question is ambiguous
+    true_ambiguous = sum(
+        1 for r in results 
+        if r["predicted_sql"] == "ambiguous" and r["gold_sql"] == "ambiguous"
+    )
+    
+    # Missed ambiguous: gold was ambiguous, but model generated SQL anyway
+    missed_ambiguous = sum(
+        1 for r in results 
+        if r["predicted_sql"] != "ambiguous" and r["gold_sql"] == "ambiguous"
     )
 
-    false_ambiguous_rate = (
-        100.0 * false_ambiguous / len(results) if results else 0.0
-    )
+    false_ambiguous_rate = 100.0 * false_ambiguous / len(results) if results else 0.0
+    true_ambiguous_rate = 100.0 * true_ambiguous / len(results) if results else 0.0
+    missed_ambiguous_rate = 100.0 * missed_ambiguous / len(results) if results else 0.0
 
     print(results)
     report = {
@@ -265,6 +280,10 @@ def run_evaluation(predictions: Dict[str, str], answer_file: str, db_url: str, i
         "ves_by_database": by_database_ves,
         "false_ambiguous": false_ambiguous,
         "false_ambiguous_rate": false_ambiguous_rate,
+        "true_ambiguous": true_ambiguous,
+        "true_ambiguous_rate": true_ambiguous_rate,
+        "missed_ambiguous": missed_ambiguous,
+        "missed_ambiguous_rate": missed_ambiguous_rate,
         "total": len(results),
         "results": results,
     }
@@ -294,7 +313,11 @@ def print_evaluation_report(report: dict):
         print(f"  {db:<20}: EX = {ex:>5.2f}% | VES = {ves:>5.2f}%")
     print()
 
-    print(f"False ambiguous predicted : {report['false_ambiguous']}")
-    print(f"False ambiguous rate      : {report['false_ambiguous_rate']:.2f}%")
+    # ---- Ambiguity analysis ----
+    print("\nAmbiguity detection analysis:")
+    print(f"  False ambiguous (model refused, but gold exists): {report['false_ambiguous']} ({report['false_ambiguous_rate']:.2f}%)")
+    print(f"  True ambiguous (both agree question is ambiguous): {report['true_ambiguous']} ({report['true_ambiguous_rate']:.2f}%)")
+    print(f"  Missed ambiguous (gold was ambiguous, model answered anyway): {report['missed_ambiguous']} ({report['missed_ambiguous_rate']:.2f}%)")
+
 
     print("============================================================\n")
