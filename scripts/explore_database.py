@@ -6,7 +6,7 @@ import json
 from typing import Dict, List, Any
 import os
 
-# Загружаем переменные из .env
+
 load_dotenv(override=True)
 
 db_user = os.getenv("DB_USER")
@@ -187,12 +187,13 @@ class DatabaseExplorer:
         for table_info in tables:
             table_name = table_info['table_name']
             print(f"Exploring table: {table_name}")
-            
+
+            primary_keys = self.get_primary_keys(table_name)
             columns = self.get_columns(table_name)
             foreign_keys = self.get_foreign_keys(table_name)
             sample_rows = self.get_sample_rows(table_name, limit=5)
-            
-            # Статистики для каждой колонки            
+            comment = self.get_table_comment(table_name)
+                       
             column_stats = {}
             for col in columns:
                 stats = self.get_statistics(table_name, col['column_name'])
@@ -201,10 +202,12 @@ class DatabaseExplorer:
             result['tables'].append({
                 'table_name': table_name,
                 'table_type': table_info['table_type'],
+                'primary_keys': primary_keys,
                 'columns': columns,
                 'foreign_keys': foreign_keys,
                 'sample_rows': sample_rows,
-                'column_statistics': column_stats
+                'column_statistics': column_stats, 
+                'table_comment': comment
             })
             
         
@@ -239,73 +242,20 @@ def process_single_database(db_name: str, output_dir: Path) -> None:
         print(f"Неожиданная ошибка при исследовании {db_name}: {e}")
 
 
-
-def load_db_list_from_file(config_path: Path) -> List[str]:
-    """Загрузить список БД из текстового файла (по одной в строке)"""
-    if not config_path.exists():
-        return []
-    with open(config_path, 'r', encoding='utf-8') as f:
-        return [line.strip() for line in f if line.strip() and not line.startswith('#')]
     
 def main():
-    parser = argparse.ArgumentParser(
-        description="Извлечение знаний о PostgreSQL БД в JSON-формате"
-    )
-    
-    # Группа 1: одна конкретная БД
+    parser = argparse.ArgumentParser(description="Извлечение знаний о PostgreSQL БД в JSON-формате")    
     parser.add_argument(
         '--db', type=str,
         help="Имя одной БД для обработки (например: financial)"
-    )
-    
-    # Группа 2: список БД из файла
-    parser.add_argument(
-        '--config', type=Path,
-        default=project_root / 'databases.txt',
-        help="Путь к файлу со списком БД (по одной в строке). По умолчанию: databases.txt"
-    )
-    
-    # Группа 3: все БД из BIRD (предустановленный список)
-    parser.add_argument(
-        '--all-bird', action='store_true',
-        help="Обработать все стандартные БД из BIRD dev"
-    )
-    
-    # Опции вывода
+    )    
     parser.add_argument(
         '--output-dir', type=Path, default=db_knowledge_dir,
         help="Папка для сохранения JSON-файлов"
-    )
-    
+    )    
     args = parser.parse_args()
-
-    # Определяем, какие БД обрабатывать
-    databases: List[str] = []
     
-    if args.db:
-        databases = [args.db]
-    elif args.all_bird:
-        databases = [
-           'toxicology', 'financial',
-            'codebase_community'
-        ]
-    else:
-        # По умолчанию — читаем из конфига
-        databases = load_db_list_from_file(args.config)
-        if not databases:
-            print(f"Файл {args.config} не найден или пуст.")
-            print("Используй один из вариантов:")
-            print("  python extract_schema.py --db financial")
-            print("  python extract_schema.py --all-bird")
-            print("  python extract_schema.py --config my_databases.txt")
-            return
-    
-    print(f"Будет обработано БД: {len(databases)}")
-    print(f"Выходная папка: {args.output_dir}")
-    
-    for db_name in databases:
-        process_single_database(db_name, args.output_dir)
-    
+    process_single_database(args.db, args.output_dir)    
     print(f"\nГотово! Все файлы в: {args.output_dir}")
     
 if __name__ == '__main__':    
