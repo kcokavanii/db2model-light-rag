@@ -17,7 +17,7 @@ db_port = int(os.getenv("DB_PORT", "5444"))
 # Определяем путь относительно текущего скрипта
 script_dir = Path(__file__).parent 
 project_root = script_dir.parent   
-db_knowledge_dir = project_root / 'db_knowledge'
+db_knowledge_dir = project_root / 'artifacts' / 'db_knowledge'
 db_knowledge_dir.mkdir(exist_ok=True)
 
 class DatabaseExplorer:
@@ -76,46 +76,54 @@ class DatabaseExplorer:
         ]
     
     def get_primary_keys(self, table_name: str) -> List[str]:
-        """Получить первичные ключи таблицы"""
+        """Получить первичные ключи через pg_catalog (более надёжно)"""
         query = """
-        SELECT kcu.column_name
-        FROM information_schema.table_constraints tc
-        JOIN information_schema.key_column_usage kcu
-            ON tc.constraint_name = kcu.constraint_name
-        WHERE tc.constraint_type = 'PRIMARY KEY'
-          AND tc.table_schema = 'public'
-          AND tc.table_name = %s;
+        SELECT a.attname
+        FROM pg_index i
+        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+        WHERE i.indrelid = %s::regclass
+          AND i.indisprimary
+        ORDER BY a.attnum;
         """
-        self.cursor.execute(query, (table_name,))
-        return [row[0] for row in self.cursor.fetchall()]
+        try:
+            self.cursor.execute(query, (f'public.{table_name}',))
+            result = [row[0] for row in self.cursor.fetchall()]
+            return result
+        except Exception as e:
+            print(f"  Ошибка при получении PK для {table_name}: {e}")
+            return []
     
     
     def get_foreign_keys(self, table_name: str) -> List[Dict[str, Any]]:
-        """Получить внешние ключи таблицы"""
+        """Получить внешние ключи через pg_catalog (более надёжно)"""
         query = """
         SELECT
-            tc.constraint_name,
-            kcu.column_name,
-            ccu.table_name AS foreign_table_name,
-            ccu.column_name AS foreign_column_name
-        FROM information_schema.table_constraints AS tc
-        JOIN information_schema.key_column_usage AS kcu
-          ON tc.constraint_name = kcu.constraint_name
-        JOIN information_schema.constraint_column_usage AS ccu
-          ON ccu.constraint_name = tc.constraint_name
-        WHERE tc.constraint_type = 'FOREIGN KEY'
-          AND tc.table_name = %s;
+            a.attname AS column_name,
+            c2.relname AS foreign_table,
+            a2.attname AS foreign_column
+        FROM pg_constraint con
+        JOIN pg_class c ON con.conrelid = c.oid
+        JOIN pg_class c2 ON con.confrelid = c2.oid
+        JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY(con.conkey)
+        JOIN pg_attribute a2 ON a2.attrelid = c2.oid AND a2.attnum = ANY(con.confkey)
+        WHERE c.relname = %s
+          AND con.contype = 'f'
+        ORDER BY con.conname, a.attnum;
         """
-        self.cursor.execute(query, (table_name,))
-        return [
-            {
-                'constraint_name': row[0],
-                'column_name': row[1],
-                'foreign_table': row[2],
-                'foreign_column': row[3]
-            }
-            for row in self.cursor.fetchall()
-        ]
+        try:
+            self.cursor.execute(query, (table_name,))
+            result = [
+                {
+                    'column_name': row[0],
+                    'foreign_table': row[1],
+                    'foreign_column': row[2]
+                }
+                for row in self.cursor.fetchall()
+            ]
+            return result
+        except Exception as e:
+            print(f"  Ошибка при получении FK для {table_name}: {e}")
+            return []
 
     def get_table_comment(self, table_name: str) -> str:
         """Получить комментарий к таблице (COMMENT ON TABLE ...)"""

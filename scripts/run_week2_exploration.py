@@ -25,8 +25,8 @@ def main():
     args = parser.parse_args()
 
     db_name = args.db
-    json_path = project_root / "db_knowledge" / f"{db_name}_knowledge.json"
-    output_dir = project_root / "m_schemas"
+    json_path = project_root / "artifacts" / "db_knowledge" / f"{db_name}_knowledge.json"
+    output_dir = project_root / "artifacts" / "m_schemas"
 
     print(f"Запуск pipeline для БД: '{db_name}'")
 

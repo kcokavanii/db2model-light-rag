@@ -9,3 +9,9 @@ db_schemas.json
 all_gold_results.json
 all_predicted_results.json
 query_results.json
+
+# Logs
+*.log
+
+# Artifacts
+artifacts/
