@@ -63,7 +63,7 @@ def generate_xiyan_m_schema(db_data: Dict[str, Any], db_name: str) -> str:
             pk_marker = ", Primary Key" if is_pk else ""
             
             stats = col_stats.get(col_name, {})
-            examples = stats.get("most_common_vals", [])
+            examples = stats.get("most_common_vals", [])[:3] 
             
             if examples:
                 examples_str = ", ".join(format_value(v) for v in examples)
@@ -106,7 +106,7 @@ def build_semantic_prompt(table: Dict[str, Any]) -> str:
         pk_text = " (Primary Key)" if is_pk else ""
         
         stats = col_stats.get(col_name, {})
-        examples = stats.get("most_common_vals", [])        
+        examples = stats.get("most_common_vals", [])[:3]        
         parts = [f"  - {col_name}{pk_text} (тип: {col_type}, nullable: {nullable})"]
         if examples:
             parts.append(f"примеры: {examples}")

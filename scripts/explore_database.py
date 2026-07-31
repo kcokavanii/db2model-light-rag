@@ -160,18 +160,30 @@ class DatabaseExplorer:
         row = self.cursor.fetchone()
         if not row:
             return {}
-        
-        most_common_3 = []
-        if row[3]: 
+
+        n_distinct = row[0]
+        most_common_vals = []
+        if row[3]:
             vals = row[3].strip('{}').split(',')
-            most_common_3 = [v for v in vals[:3] if v]
+            if n_distinct < 0:
+                most_common_vals = vals[:10]
+            elif n_distinct <= 20:
+                most_common_vals = vals
+            elif n_distinct <= 200:
+                most_common_vals = vals[:20]
+            else:
+                most_common_vals = vals[:10]
+
+        most_common_freqs = []
+        if row[4] and most_common_vals:
+            most_common_freqs = row[4][:len(most_common_vals)]
         
         return {
-            'n_distinct': row[0],
+            'n_distinct': n_distinct,
             'null_frac': row[1],
             'avg_width': row[2],
-            'most_common_vals': most_common_3,
-            'most_common_freqs': row[4],
+            'most_common_vals': most_common_vals,
+            'most_common_freqs': most_common_freqs,
             'histogram_bounds': row[5]
         }
     
