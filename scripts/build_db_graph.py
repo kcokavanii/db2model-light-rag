@@ -148,6 +148,7 @@ def should_create_value_nodes(col_stats: Dict[str, Any], col_name: str) -> bool:
     Skips IDs, dates/timestamps, and high-cardinality numeric columns.
     """
     n_distinct = col_stats.get("n_distinct")
+    n_distinct_fraction = col_stats.get("n_distinct_fraction")
     col_type = (col_stats.get("data_type") or "").lower()
     col_lower = col_name.lower()
     
@@ -157,13 +158,12 @@ def should_create_value_nodes(col_stats: Dict[str, Any], col_name: str) -> bool:
     if "date" in col_type or "timestamp" in col_type or "time" in col_type:
         return False
     
-    if n_distinct is not None and 0 < n_distinct <= 20:
-        return True
+    if n_distinct_fraction is not None:
+        if n_distinct_fraction <= 0.05: 
+            return True
+        elif n_distinct_fraction <= 0.20:
+            return bool(col_stats.get("most_common_vals"))
     
-    if n_distinct is not None and 20 < n_distinct <= 200:
-        return bool(col_stats.get("most_common_vals"))
-    
-    # For high-cardinality - no
     return False
 
 
@@ -171,25 +171,59 @@ def get_values_to_include(col_stats: Dict[str, Any]) -> List[str]:
     """
     Determines how many values to include as nodes.
     """
-    n_distinct = col_stats.get("n_distinct")
+    n_distinct_fraction = col_stats.get("n_distinct_fraction")
     most_common_vals = col_stats.get("most_common_vals") or []
     
-    # Remove empty/null values
-    most_common_vals = [v for v in most_common_vals if v and str(v).strip()]
+    # Remove only null values
+    most_common_vals = [v for v in most_common_vals if v is not None]
     
     if not most_common_vals:
         return []
     
-    if n_distinct is None:
+    if n_distinct_fraction is None:
         return most_common_vals[:10]
-    elif n_distinct <= 20:
+    elif n_distinct_fraction <= 0.05:
         return most_common_vals  
-    elif n_distinct <= 200:
+    elif n_distinct_fraction <= 0.20:
         return most_common_vals[:20]
     else:
         return most_common_vals[:10]
 
+def sanitize_value_for_id(value: str) -> str:
+    """
+    Sanitizes a value to be safe for use in XML node ID.
+    Handles empty strings, spaces, and special characters.
+    """
+    if value == "":
+        return "EMPTY_STRING"
+    elif value.strip() == "":
+        return "WHITESPACE"
+    else:
+        # Replace problematic characters
+        return value.replace(" ", "_").replace('"', "'").replace("<", "_").replace(">", "_")
 
+def create_value_node(table_name: str, col_name: str, value: Any, col_type: str) -> Dict:
+    """
+    Create a value node with safe ID.
+    Handles empty strings, spaces, and special characters.
+    Preserves the original value for LLM context.
+    """
+    str_value = "" if value is None else str(value)
+    
+    safe_id_suffix = sanitize_value_for_id(str_value)
+    
+    node_id = f"VAL:{safe_id_suffix}@{table_name}.{col_name}"
+    full_col_name = f"{table_name}.{col_name}"
+    
+    return {
+        "id": node_id,
+        "type": "value",
+        "value": str_value,          
+        "column": full_col_name, # Full name for schema linking
+        "data_type": col_type,
+    }
+
+# ---- Build base graph ----
 
 def build_base_graph(
     db_knowledge: Dict[str, Any],
@@ -251,30 +285,58 @@ def build_base_graph(
                 values_to_include = get_values_to_include(stats)
                 
                 for val in values_to_include:
-                    val_clean = str(val).strip().strip('"').strip("'")
-                    if not val_clean:
+                    if val is None:
                         continue
+
+                    node_data = create_value_node(
+                        table_name=table_name,
+                        col_name=col_name,
+                        value=val,
+                        col_type=col.get("data_type", ""),
+                    )
                     
-                    val_node = f"VAL:{val_clean}@{table_name}.{col_name}"
                     
-                    if not G.has_node(val_node):
+                    if not G.has_node(node_data["id"]):
                         G.add_node(
-                            val_node,
-                            type="value",
-                            value=val_clean,
-                            column=f"{table_name}.{col_name}",
-                            data_type=col.get("data_type", ""),
+                            node_data["id"],
+                            type=node_data["type"],
+                            value=node_data["value"],
+                            column=node_data["column"],
+                            data_type=node_data["data_type"],
                         )
                     
-                    G.add_edge(val_node, col_node, relation="VALUE_IN")
-        
-        # ---- FK Edges ----
+                    G.add_edge(node_data["id"], col_node, relation="VALUE_IN")
+
+            # ---- Metadata enrichment for dates ----
+            col_type_lower = (col.get("data_type", "") or "").lower()
+            if "date" in col_type_lower or "timestamp" in col_type_lower:
+                histogram = stats.get("histogram_bounds")
+                if histogram and isinstance(histogram, str) and histogram.startswith("{"):
+                    inner = histogram.strip("{}")
+                    if inner:
+                        bounds = inner.split(",")
+                        if len(bounds) >= 2:
+                            G.nodes[col_node]["min_date"] = bounds[0].strip().strip('"')
+                            G.nodes[col_node]["max_date"] = bounds[-1].strip().strip('"')
+                            try:
+                                from datetime import datetime
+                                min_dt = datetime.strptime(bounds[0].strip().strip('"'), "%Y-%m-%d")
+                                max_dt = datetime.strptime(bounds[-1].strip().strip('"'), "%Y-%m-%d")
+                                G.nodes[col_node]["date_range_years"] = round((max_dt - min_dt).days / 365.25, 2)
+                            except Exception:
+                                pass
+
+    # ---- FK Edges ----
+    for table in tables:
+        table_name = table["table_name"]
         for fk in table.get("foreign_keys", []):
             from_col = f"COL:{table_name}.{fk['column_name']}"
             to_col = f"COL:{fk['foreign_table']}.{fk['foreign_column']}"
             
             if G.has_node(from_col) and G.has_node(to_col):
                 G.add_edge(from_col, to_col, relation="FK_REFERENCES")
+            else:
+                log.warning(f"FK skipped: {from_col} -> {to_col} (node missing)")
     
     return G
 
@@ -283,6 +345,9 @@ def build_base_graph(
 def find_semantic_edges_by_name(G: nx.DiGraph) -> List[Tuple[str, str, Dict]]:
     """Find semantic edges by identical column names across different tables."""
     edges = []
+
+    # Blacklist
+    GENERIC_NAMES = {"type", "name", "status", "value", "code", "description"}
     
     columns = [
         (node, data) for node, data in G.nodes(data=True)
@@ -291,10 +356,16 @@ def find_semantic_edges_by_name(G: nx.DiGraph) -> List[Tuple[str, str, Dict]]:
     
     for i, (node1, data1) in enumerate(columns):
         col_name1 = data1["name"]
+        table1 = node1.split(".")[0].replace("COL:", "")
+
+        if col_name1.lower() in GENERIC_NAMES:
+            continue
+
         for node2, data2 in columns[i+1:]:
             col_name2 = data2["name"]
+            table2 = node2.split(".")[0].replace("COL:", "")
             
-            if col_name1 == col_name2:
+            if col_name1 == col_name2 and table1 != table2:
                 # Skip if FK already exists
                 if G.has_edge(node1, node2) or G.has_edge(node2, node1):
                     continue
@@ -343,10 +414,28 @@ def find_semantic_edges_by_embeddings(G: nx.DiGraph, embedding_model: Any,) -> L
             if similarity >= SEMANTIC_SIMILARITY_THRESHOLD:
                 node1, data1, _ = columns_with_desc[i]
                 node2, data2, _ = columns_with_desc[j]
+
+                table1 = node1.split(".")[0].replace("COL:", "")
+                table2 = node2.split(".")[0].replace("COL:", "")
+                col1 = data1["name"]
+                col2 = data2["name"]
+
+                # Skip connections inside one table 
+                if table1 == table2:
+                    continue
                 
                 # Skip if FK already exists
                 if G.has_edge(node1, node2) or G.has_edge(node2, node1):
                     continue
+
+                if col1 != col2:
+                    # Skip id
+                    if col1.endswith("_id") and col2.endswith("_id"):
+                        continue
+                    
+                    # Approve if the similarity is very high
+                    if similarity < 0.95:
+                        continue
                 
                 edges.append((
                     node1, node2,
@@ -448,7 +537,7 @@ def verify_semantic_edges_with_llm(
         return uncertain_edges
 
 
-def add_semantic_edges(G: nx.DiGraph, client: OpenAI = None, llm_model: str = None) -> Dict[str, int]:
+def add_semantic_edges(G: nx.DiGraph, client: OpenAI = None, llm_model: str = None, verify_all: bool = False, ) -> Dict[str, int]:
     """
     Adds semantic edges using a hybrid approach:
     1. Name heuristics
@@ -468,39 +557,25 @@ def add_semantic_edges(G: nx.DiGraph, client: OpenAI = None, llm_model: str = No
     try:
         embedding_model = SentenceTransformer(EMBEDDING_MODEL)
         embedding_edges = find_semantic_edges_by_embeddings(G, embedding_model)
-        
-        # Split by confidence
-        confident = []
-        uncertain = []
-        
-        for edge in embedding_edges:
-            if edge[2]["similarity"] >= SEMANTIC_HIGH_CONFIDENCE:
-                confident.append(edge)
-            else:
-                uncertain.append(edge)
-        
-        G.add_edges_from(confident)
-        stats["embedding"] = len(confident)
-        
-        # Verify uncertain ones via LLM
-        if uncertain and client and llm_model:
-            verified = verify_semantic_edges_with_llm(
-                uncertain, G, client, llm_model
-            )
-            G.add_edges_from(verified)
-            stats["llm_verified"] = len(verified)
-        else:
-            G.add_edges_from(uncertain)
-            stats["embedding"] += len(uncertain)
-            
+        stats["embedding"] = len(embedding_edges)
     except Exception as e:
         log.error(f"Embedding error: {e}")
-        import traceback
-        traceback.print_exc()
     
-    stats["total"] = (
-        stats["heuristic"] + stats["embedding"] + stats["llm_verified"]
-    )
+    all_candidates = heuristic_edges + embedding_edges
+    log.info(f"Total semantic candidates: {len(all_candidates)}")
+    
+    if verify_all and client and llm_model and all_candidates:
+        log.info("Teacher-LLM verifying ALL semantic edges...")
+        verified = verify_semantic_edges_with_llm(
+            all_candidates, G, client, llm_model
+        )
+        G.add_edges_from(verified)
+        stats["llm_verified"] = len(verified)
+        stats["total"] = len(verified)
+    else:
+        G.add_edges_from(all_candidates)
+        stats["total"] = len(all_candidates)
+    
     return stats
 
 
@@ -673,6 +748,11 @@ def main():
     parser.add_argument(
         "--inspect", action="store_true",
         help="Print example graph nodes after building."
+    )
+    parser.add_argument(
+        "--verify-all", action="store_true",
+        help="Use Teacher-LLM to verify ALL semantic edges (heuristics + embeddings). "
+            "Costs more tokens but gives cleaner graph."
     )
     args = parser.parse_args()
 
