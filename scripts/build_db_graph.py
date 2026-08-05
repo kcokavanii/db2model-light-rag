@@ -26,6 +26,7 @@ import re
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+from datetime import datetime
 
 import networkx as nx
 import numpy as np
@@ -142,20 +143,25 @@ def parse_semantic_schema(semantic_file: Path) -> Dict[str, Dict[str, str]]:
 
 # ---- Value nodes logic ----
 
-def should_create_value_nodes(col_stats: Dict[str, Any], col_name: str) -> bool:
+def is_date_or_timestamp(data_type: str | None) -> bool:
+    normalized_type = (data_type or "").strip().lower()
+    return (
+        normalized_type == "date"
+        or normalized_type.startswith("timestamp")
+    )
+
+def should_create_value_nodes(col_stats: Dict[str, Any], col_name: str, data_type: str) -> bool:
     """
     Determines whether to create value nodes for a given column.
     Skips IDs, dates/timestamps, and high-cardinality numeric columns.
     """
-    n_distinct = col_stats.get("n_distinct")
     n_distinct_fraction = col_stats.get("n_distinct_fraction")
-    col_type = (col_stats.get("data_type") or "").lower()
     col_lower = col_name.lower()
     
     if col_lower.endswith("_id") or col_lower == "id":
         return False
     
-    if "date" in col_type or "timestamp" in col_type or "time" in col_type:
+    if is_date_or_timestamp(data_type):
         return False
     
     if n_distinct_fraction is not None:
@@ -281,7 +287,7 @@ def build_base_graph(
             G.add_edge(table_node, col_node, relation="HAS_COLUMN")
             
             # ---- Value Nodes (lookups only) ----
-            if should_create_value_nodes(stats, col_name):
+            if should_create_value_nodes(stats, col_name, col.get("data_type", "")):
                 values_to_include = get_values_to_include(stats)
                 
                 for val in values_to_include:
@@ -308,23 +314,29 @@ def build_base_graph(
                     G.add_edge(node_data["id"], col_node, relation="VALUE_IN")
 
             # ---- Metadata enrichment for dates ----
-            col_type_lower = (col.get("data_type", "") or "").lower()
-            if "date" in col_type_lower or "timestamp" in col_type_lower:
+            if is_date_or_timestamp(col.get("data_type")):
                 histogram = stats.get("histogram_bounds")
                 if histogram and isinstance(histogram, str) and histogram.startswith("{"):
                     inner = histogram.strip("{}")
                     if inner:
                         bounds = inner.split(",")
                         if len(bounds) >= 2:
-                            G.nodes[col_node]["min_date"] = bounds[0].strip().strip('"')
-                            G.nodes[col_node]["max_date"] = bounds[-1].strip().strip('"')
+                            min_date = bounds[0].strip().strip('"')
+                            max_date = bounds[-1].strip().strip('"')
+
+                            G.nodes[col_node]["min_date"] = min_date
+                            G.nodes[col_node]["max_date"] = max_date
                             try:
-                                from datetime import datetime
-                                min_dt = datetime.strptime(bounds[0].strip().strip('"'), "%Y-%m-%d")
-                                max_dt = datetime.strptime(bounds[-1].strip().strip('"'), "%Y-%m-%d")
+                                min_dt = datetime.fromisoformat(bounds[0].strip().strip('"'))
+                                max_dt = datetime.fromisoformat(bounds[-1].strip().strip('"'))
                                 G.nodes[col_node]["date_range_years"] = round((max_dt - min_dt).days / 365.25, 2)
                             except Exception:
-                                pass
+                                log.warning(
+                                    "Could not parse temporal bounds for %s: %r, %r",
+                                    col_node,
+                                    min_date,
+                                    max_date,
+                                )
 
     # ---- FK Edges ----
     for table in tables:
