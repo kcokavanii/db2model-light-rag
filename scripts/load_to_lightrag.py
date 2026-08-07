@@ -3,12 +3,29 @@ import argparse
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Mapping
+from sentence_transformers import SentenceTransformer
+
+import asyncio
+import logging
+import time
 
 import networkx as nx
+from lightrag import LightRAG
+from lightrag.utils import EmbeddingFunc
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+log = logging.getLogger(__name__)
 
 
 BASE_ARTIFACTS_DIR = Path("artifacts")
 GRAPH_DIR = BASE_ARTIFACTS_DIR / "graphs"
+LIGHTRAG_DIR = BASE_ARTIFACTS_DIR / "lightrag"
+EMBEDDING_MODEL_NAME = "BAAI/bge-m3"
+EMBEDDING_DIM = 1024
 
 SUPPORTED_RELATIONS = {
     "HAS_COLUMN",
@@ -23,6 +40,7 @@ RELATION_KEYWORDS = {
     "VALUE_IN": "example lookup value column",
     "SEMANTICALLY_RELATED": "semantic similarity related columns",
 }
+
 
 def create_description_on_type_node(node_data: Mapping[str, Any]) -> str:
     """Create a searchable text description for a database graph node"""
@@ -275,7 +293,7 @@ def create_table_chunks(
     db_name: str,
     file_path: str,
 ) -> list[dict[str, Any]]:
-    """Aggregate entities and relationships into one chunk per table."""
+    """Aggregate entities and relationships into one chunk per table"""
     grouped_entities: dict[str, list[dict[str, Any]]] = defaultdict(list)
     grouped_relationships: dict[str, list[dict[str, Any]]] = defaultdict(list)
     table_source_ids: set[str] = set()
@@ -351,7 +369,7 @@ def validate_custom_kg(
     graph: nx.DiGraph,
     db_name: str,
 ) -> dict[str, int]:
-    """Validate custom KG integrity and return unique object counts."""
+    """Validate custom KG integrity and return unique object counts"""
     entities = custom_kg["entities"]
     relationships = custom_kg["relationships"]
     chunks = custom_kg["chunks"]
@@ -455,7 +473,7 @@ def convert_graph_to_custom_kg(
     dict[str, list[dict[str, Any]]],
     dict[str, int],
 ]:
-    """Convert a database NetworkX graph into LightRAG custom KG."""
+    """Convert a database NetworkX graph into LightRAG custom KG"""
     if not isinstance(graph, nx.DiGraph):
         raise TypeError(
             f"Expected nx.DiGraph, got {type(graph).__name__}"
@@ -517,6 +535,148 @@ def convert_graph_to_custom_kg(
     return custom_kg, validation_summary
 
 
+async def load_custom_kg_into_lightrag(
+    custom_kg: dict[str, list[dict[str, Any]]],
+    db_name: str,
+) -> None:
+    """Load a pre-built database knowledge graph into LightRAG storage"""
+    total_started_at = time.perf_counter()
+
+    log.info(
+        "Starting custom KG load for database '%s': "
+        "%d chunks, %d entities, %d relationships",
+        db_name,
+        len(custom_kg["chunks"]),
+        len(custom_kg["entities"]),
+        len(custom_kg["relationships"]),
+    )
+
+    model_started_at = time.perf_counter()
+    log.info(
+        "Loading embedding model '%s'",
+        EMBEDDING_MODEL_NAME,
+    )
+
+    embedding_model = SentenceTransformer(
+        EMBEDDING_MODEL_NAME,
+    )
+
+    log.info(
+        "Embedding model loaded on device '%s' in %.1f seconds",
+        embedding_model.device,
+        time.perf_counter() - model_started_at,
+    )
+
+    embedding_batch_number = 0
+
+    async def embedding_func(texts: list[str]):
+        nonlocal embedding_batch_number
+        embedding_batch_number += 1
+        batch_started_at = time.perf_counter()
+
+        log.info(
+            "Embedding batch %d started: %d texts",
+            embedding_batch_number,
+            len(texts),
+        )
+
+        try:
+            embeddings = await asyncio.to_thread(
+                embedding_model.encode,
+                texts,
+                normalize_embeddings=True,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )
+        except Exception:
+            log.exception(
+                "Embedding batch %d failed after %.1f seconds",
+                embedding_batch_number,
+                time.perf_counter() - batch_started_at,
+            )
+            raise
+
+        log.info(
+            "Embedding batch %d completed: %d texts in %.1f seconds",
+            embedding_batch_number,
+            len(texts),
+            time.perf_counter() - batch_started_at,
+        )
+
+        return embeddings
+
+    async def llm_model_func_not_used(
+        *_args: Any,
+        **_kwargs: Any,
+    ) -> str:
+        raise RuntimeError(
+            "LLM must not be called while loading a custom KG"
+        )
+
+    working_dir = LIGHTRAG_DIR / db_name
+
+    log.info(
+        "Creating LightRAG instance with working directory '%s'",
+        working_dir,
+    )
+
+    rag = LightRAG(
+        working_dir=str(working_dir),
+        embedding_func=EmbeddingFunc(
+            embedding_dim=EMBEDDING_DIM,
+            max_token_size=8192,
+            model_name=EMBEDDING_MODEL_NAME,
+            func=embedding_func,
+        ),
+        llm_model_func=llm_model_func_not_used,
+        embedding_func_max_async=1,
+        default_embedding_timeout=300,
+    )
+
+    initialization_started_at = time.perf_counter()
+    log.info("Initializing LightRAG storages")
+
+    await rag.initialize_storages()
+
+    log.info(
+        "LightRAG storages initialized in %.1f seconds",
+        time.perf_counter() - initialization_started_at,
+    )
+
+    try:
+        insertion_started_at = time.perf_counter()
+        log.info("Inserting custom KG into LightRAG storages")
+
+        await rag.ainsert_custom_kg(custom_kg)
+
+        log.info(
+            "Custom KG inserted successfully in %.1f seconds",
+            time.perf_counter() - insertion_started_at,
+        )
+    except Exception:
+        log.exception(
+            "Custom KG load failed for database '%s'",
+            db_name,
+        )
+        raise
+    finally:
+        finalization_started_at = time.perf_counter()
+        log.info("Finalizing LightRAG storages")
+
+        await rag.finalize_storages()
+
+        log.info(
+            "LightRAG storages finalized in %.1f seconds",
+            time.perf_counter() - finalization_started_at,
+        )
+
+    log.info(
+        "Custom KG load completed for database '%s' in %.1f seconds",
+        db_name,
+        time.perf_counter() - total_started_at,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Convert a database graph to LightRAG custom KG")
     parser.add_argument(
@@ -553,6 +713,13 @@ def main() -> None:
         f"{len(custom_kg['entities'])} entities, "
         f"{len(custom_kg['relationships'])} relationships, "
         f"{len(custom_kg['chunks'])} chunks"
+    )
+
+    asyncio.run(
+        load_custom_kg_into_lightrag(
+            custom_kg=custom_kg,
+            db_name=db_name,
+        )
     )
 
 
