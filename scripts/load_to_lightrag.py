@@ -40,6 +40,17 @@ RELATION_KEYWORDS = {
     "VALUE_IN": "example lookup value column",
     "SEMANTICALLY_RELATED": "semantic similarity related columns",
 }
+LIGHTRAG_EXCLUDED_RELATIONS = {
+    "SEMANTICALLY_RELATED",
+}
+
+
+def should_load_relationship(
+    edge_data: Mapping[str, Any],
+) -> bool:
+    """Return whether a graph relationship should be loaded into LightRAG"""
+    relation = str(edge_data.get("relation") or "").upper()
+    return relation not in LIGHTRAG_EXCLUDED_RELATIONS
 
 
 def create_description_on_type_node(node_data: Mapping[str, Any]) -> str:
@@ -395,11 +406,16 @@ def validate_custom_kg(
         )
         for relationship in relationships
     }
+    expected_relationship_pairs = {
+        (str(src_id), str(tgt_id))
+        for src_id, tgt_id, edge_data in graph.edges(data=True)
+        if should_load_relationship(edge_data)
+    }
 
     if len(relationships) != len(relationship_pairs):
         errors.append("duplicate relationships found")
-    if relationship_pairs != set(graph.edges):
-        errors.append("relationships do not match graph edges")
+    if relationship_pairs != expected_relationship_pairs:
+        errors.append("relationships do not match included graph edges")
 
     missing_endpoints = sorted(
         {
@@ -451,8 +467,10 @@ def validate_custom_kg(
 
     if len(entities) != graph.number_of_nodes():
         errors.append("entity count does not match NetworkX graph")
-    if len(relationships) != graph.number_of_edges():
-        errors.append("relationship count does not match NetworkX graph")
+    if len(relationships) != len(expected_relationship_pairs):
+        errors.append(
+            "relationship count does not match included graph edges"
+        )
     if len(chunks) != len(expected_chunk_ids):
         errors.append("table chunk count does not match NetworkX graph")
 
@@ -513,6 +531,7 @@ def convert_graph_to_custom_kg(
                 str(item[2].get("relation", "")),
             ),
         )
+        if should_load_relationship(edge_data)
     ]
 
     chunks = create_table_chunks(
