@@ -5,12 +5,11 @@ import os
 import re
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
-from itertools import combinations
-from typing import Any, cast
+from itertools import combinations, islice
+from typing import Any
 
 import networkx as nx
 from dotenv import load_dotenv
-from networkx.algorithms.shortest_paths.generic import shortest_path
 from sentence_transformers import SentenceTransformer
 
 from lightrag import LightRAG
@@ -32,14 +31,42 @@ DATE_PATTERN = re.compile(
 NUMBER_PATTERN = re.compile(
     r"(?<![\w.])-?\d+(?:[.,]\d+)?(?![\w.])"
 )
+MATCH_SEPARATOR_PATTERN = re.compile(
+    r"[^\w]+", re.UNICODE
+)
 
 
-def filter_numeric_value_noise(
+def normalize_match_text(text: str) -> str:
+    """Normalize text for exact value and schema identifier matching"""
+    normalized = MATCH_SEPARATOR_PATTERN.sub(
+        " ",
+        text.replace("_", " ").casefold(),
+    )
+    return " ".join(normalized.split())
+
+
+def contains_normalized_phrase(
+    normalized_query: str,
+    phrase: str,
+) -> bool:
+    """Check that a phrase occurs as complete normalized tokens"""
+    normalized_phrase = normalize_match_text(phrase)
+    if not normalized_phrase:
+        return False
+
+    return (
+        f" {normalized_phrase} "
+        in f" {normalized_query} "
+    )
+
+
+def filter_value_noise(
     query: str,
     entities: list[dict[str, Any]],
     relationships: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Remove numeric value entities not explicitly mentioned in the query"""
+    """Keep only VALUE entities explicitly mentioned in the query."""
+    normalized_query = normalize_match_text(query)
     query_without_dates = DATE_PATTERN.sub(" ", query)
 
     query_numbers: set[Decimal] = set()
@@ -66,9 +93,14 @@ def filter_numeric_value_noise(
         try:
             numeric_value = Decimal(raw_value.replace(",", "."))
         except InvalidOperation:
-            continue
+            value_is_relevant = contains_normalized_phrase(
+                normalized_query,
+                raw_value,
+            )
+        else:
+            value_is_relevant = numeric_value in query_numbers
 
-        if numeric_value not in query_numbers:
+        if not value_is_relevant:
             removed_entity_names.add(entity_name)
 
     filtered_entities = [
@@ -79,11 +111,101 @@ def filter_numeric_value_noise(
     filtered_relationships = [
         relationship
         for relationship in relationships
-        if relationship["src_id"] not in removed_entity_names
-        and relationship["tgt_id"] not in removed_entity_names
+        if str(relationship.get("src_id"))
+        not in removed_entity_names
+        and str(relationship.get("tgt_id"))
+        not in removed_entity_names
     ]
 
     return filtered_entities, filtered_relationships
+
+
+def identifier_is_mentioned(
+    normalized_query: str,
+    identifier: str,
+) -> bool:
+    """Check an identifier, including a simple English plural form."""
+    normalized_identifier = normalize_match_text(identifier)
+    if not normalized_identifier:
+        return False
+
+    variants = {
+        normalized_identifier,
+        f"{normalized_identifier}s",
+        f"{normalized_identifier}es",
+    }
+    return any(
+        f" {variant} " in f" {normalized_query} "
+        for variant in variants
+    )
+
+
+def find_core_tables(
+    query: str,
+    entities: list[dict[str, Any]],
+    table_by_column: dict[str, str],
+    column_by_value: dict[str, str],
+    max_fallback_tables: int = 3,
+) -> set[str]:
+    """Find tables directly supported by the query or retrieval ranking"""
+    normalized_query = normalize_match_text(query)
+    core_tables: set[str] = set()
+
+    for entity in entities:
+        entity_name = str(entity.get("entity_name") or "")
+        entity_type = str(
+            entity.get("entity_type") or ""
+        ).lower()
+
+        if entity_type == "table":
+            table_name = entity_name.removeprefix("TABLE:")
+            if identifier_is_mentioned(
+                normalized_query,
+                table_name,
+            ):
+                core_tables.add(entity_name)
+
+        elif entity_type == "column":
+            column_name = entity_name.rsplit(".", 1)[-1]
+            if identifier_is_mentioned(
+                normalized_query,
+                column_name,
+            ):
+                table_id = table_by_column.get(entity_name)
+                if table_id is not None:
+                    core_tables.add(table_id)
+
+        elif entity_type == "value":
+            column_id = column_by_value.get(entity_name)
+            if column_id is not None:
+                table_id = table_by_column.get(column_id)
+                if table_id is not None:
+                    core_tables.add(table_id)
+
+    if core_tables:
+        return core_tables
+
+    # Semantic fallback after LightRAG retrieval
+    for entity in entities:
+        entity_name = str(entity.get("entity_name") or "")
+        entity_type = str(
+            entity.get("entity_type") or ""
+        ).lower()
+
+        if entity_type == "table":
+            candidate = entity_name
+        elif entity_type == "column":
+            candidate = table_by_column.get(entity_name)
+        else:
+            candidate = None
+
+        if candidate is not None:
+            core_tables.add(candidate)
+
+        if len(core_tables) >= max_fallback_tables:
+            break
+
+    return core_tables
 
 
 def entity_from_storage(
@@ -128,11 +250,13 @@ def relationship_key(
 
 async def expand_fk_join_paths(
     graph_storage: BaseGraphStorage,
+    query: str,
     entities: list[dict[str, Any]],
     relationships: list[dict[str, Any]],
     max_table_hops: int = 3,
+    max_paths_per_pair: int = 3,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Add shortest FK paths between tables found by semantic retrieval"""
+    """Select relevant tables and add their shortest FK paths"""
     stored_nodes = await graph_storage.get_all_nodes()
     stored_edges = await graph_storage.get_all_edges()
 
@@ -146,27 +270,58 @@ async def expand_fk_join_paths(
         return str(node.get("entity_type") or "").lower()
 
     has_column_keyword = RELATION_KEYWORDS["HAS_COLUMN"]
+    value_in_keyword = RELATION_KEYWORDS["VALUE_IN"]
     fk_keyword = RELATION_KEYWORDS["FK_REFERENCES"]
 
     table_by_column: dict[str, str] = {}
     has_column_by_column: dict[str, dict[str, Any]] = {}
+    column_by_value: dict[str, str] = {}
+    value_in_by_value: dict[str, dict[str, Any]] = {}
 
     for edge in stored_edges:
-        if edge.get("keywords") != has_column_keyword:
+        keywords = edge.get("keywords")
+        if keywords not in {
+            has_column_keyword,
+            value_in_keyword,
+        }:
             continue
 
         left = str(edge["source"])
         right = str(edge["target"])
 
-        if node_type(left) == "table" and node_type(right) == "column":
-            table_id, column_id = left, right
-        elif node_type(right) == "table" and node_type(left) == "column":
-            table_id, column_id = right, left
-        else:
-            continue
+        if keywords == has_column_keyword:
+            if (
+                node_type(left) == "table"
+                and node_type(right) == "column"
+            ):
+                table_id, column_id = left, right
+            elif (
+                node_type(right) == "table"
+                and node_type(left) == "column"
+            ):
+                table_id, column_id = right, left
+            else:
+                continue
 
-        table_by_column[column_id] = table_id
-        has_column_by_column[column_id] = edge
+            table_by_column[column_id] = table_id
+            has_column_by_column[column_id] = edge
+
+        else:
+            if (
+                node_type(left) == "value"
+                and node_type(right) == "column"
+            ):
+                value_id, column_id = left, right
+            elif (
+                node_type(right) == "value"
+                and node_type(left) == "column"
+            ):
+                value_id, column_id = right, left
+            else:
+                continue
+
+            column_by_value[value_id] = column_id
+            value_in_by_value[value_id] = edge
 
     table_graph = nx.Graph()
     table_graph.add_nodes_from(
@@ -209,20 +364,15 @@ async def expand_fk_join_paths(
         fk_edges_by_table_pair[table_pair].append(edge)
         table_graph.add_edge(left_table, right_table)
 
-    seed_tables = {
-        str(entity["entity_name"])
-        for entity in entities
-        if str(entity.get("entity_type")).lower() == "table"
-    }
+    seed_tables = find_core_tables(
+        query=query,
+        entities=entities,
+        table_by_column=table_by_column,
+        column_by_value=column_by_value,
+    )
 
-    if len(seed_tables) < 2:
-        seed_tables.update(
-            table_by_column[column_id]
-            for entity in entities
-            if str(entity.get("entity_type")).lower() == "column"
-            if (column_id := str(entity["entity_name"]))
-            in table_by_column
-        )
+    if not seed_tables:
+        return entities, relationships
 
     selected_tables = set(seed_tables)
     selected_table_pairs: set[frozenset[str]] = set()
@@ -232,26 +382,30 @@ async def expand_fk_join_paths(
         2,
     ):
         try:
-            path = cast(
-                list[str],
-                shortest_path(
+            paths = islice(
+                nx.all_shortest_paths(
                     table_graph,
                     source=left_table,
                     target=right_table,
                 ),
+                max_paths_per_pair,
             )
+
+            for path in paths:
+                if len(path) - 1 > max_table_hops:
+                    continue
+
+                selected_tables.update(path)
+
+                for path_left, path_right in zip(
+                    path,
+                    path[1:],
+                ):
+                    selected_table_pairs.add(
+                        frozenset((path_left, path_right))
+                    )
         except (nx.NetworkXNoPath, nx.NodeNotFound):
             continue
-
-        if len(path) - 1 > max_table_hops:
-            continue
-
-        selected_tables.update(path)
-
-        for path_left, path_right in zip(path, path[1:]):
-            selected_table_pairs.add(
-                frozenset((path_left, path_right))
-            )
 
     entities_by_name = {
         str(entity["entity_name"]): entity
@@ -299,14 +453,89 @@ async def expand_fk_join_paths(
                 if has_column_edge is not None:
                     add_stored_relationship(has_column_edge)
 
-    for relationship in relationships_by_key.values():
-        add_stored_entity(str(relationship["src_id"]))
-        add_stored_entity(str(relationship["tgt_id"]))
+    for entity_id, entity in list(entities_by_name.items()):
+        if str(entity.get("entity_type")).lower() != "value":
+            continue
 
-    return (
-        list(entities_by_name.values()),
-        list(relationships_by_key.values()),
+        column_id = column_by_value.get(entity_id)
+        if column_id is None:
+            continue
+
+        table_id = table_by_column.get(column_id)
+        if table_id not in selected_tables:
+            continue
+
+        add_stored_entity(column_id)
+
+        value_in_edge = value_in_by_value.get(entity_id)
+        if value_in_edge is not None:
+            add_stored_relationship(value_in_edge)
+
+    for entity_id, entity in list(entities_by_name.items()):
+        if str(entity.get("entity_type")).lower() != "column":
+            continue
+
+        table_id = table_by_column.get(entity_id)
+        if table_id not in selected_tables:
+            continue
+
+        add_stored_entity(table_id)
+
+        has_column_edge = has_column_by_column.get(entity_id)
+        if has_column_edge is not None:
+            add_stored_relationship(has_column_edge)
+
+    allowed_entity_names: set[str] = set()
+
+    for entity_id, entity in entities_by_name.items():
+        entity_type = str(
+            entity.get("entity_type") or ""
+        ).lower()
+
+        if (
+            entity_type == "table"
+            and entity_id in selected_tables
+        ):
+            allowed_entity_names.add(entity_id)
+
+        elif (
+            entity_type == "column"
+            and table_by_column.get(entity_id)
+            in selected_tables
+        ):
+            allowed_entity_names.add(entity_id)
+
+        elif entity_type == "value":
+            column_id = column_by_value.get(entity_id)
+            if (
+                column_id is not None
+                and table_by_column.get(column_id)
+                in selected_tables
+            ):
+                allowed_entity_names.add(entity_id)
+
+    pruned_entities = [
+        entities_by_name[entity_id]
+        for entity_id in sorted(allowed_entity_names)
+    ]
+
+    pruned_relationships = [
+        relationship
+        for relationship in relationships_by_key.values()
+        if str(relationship["src_id"])
+        in allowed_entity_names
+        and str(relationship["tgt_id"])
+        in allowed_entity_names
+    ]
+    pruned_relationships.sort(
+        key=lambda relationship: (
+            str(relationship["src_id"]),
+            str(relationship["tgt_id"]),
+            str(relationship.get("keywords") or ""),
+        )
     )
+
+    return pruned_entities, pruned_relationships
 
 
 async def query_lightrag(
@@ -420,16 +649,18 @@ async def query_lightrag(
         retrieved_entity_count = len(entities)
         retrieved_relationship_count = len(relationships)
 
-        entities, relationships = filter_numeric_value_noise(
+        entities, relationships = filter_value_noise(
             query=query,
             entities=entities,
             relationships=relationships,
         )
         entities, relationships = await expand_fk_join_paths(
             graph_storage=rag.chunk_entity_relation_graph,
+            query=query,
             entities=entities,
             relationships=relationships,
             max_table_hops=3,
+            max_paths_per_pair=3,
         )
 
         data["entities"] = entities
