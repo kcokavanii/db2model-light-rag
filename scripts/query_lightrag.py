@@ -1,11 +1,13 @@
 import argparse
 import asyncio
 import json
+import logging
 import os
 import re
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 from itertools import combinations, islice
+from pathlib import Path
 from typing import Any
 
 import networkx as nx
@@ -17,23 +19,45 @@ from lightrag.base import BaseGraphStorage, QueryParam
 from lightrag.llm.openai import openai_complete_if_cache
 from lightrag.utils import EmbeddingFunc
 
-from load_to_lightrag import (
-    EMBEDDING_DIM,
-    EMBEDDING_MODEL_NAME,
-    LIGHTRAG_DIR,
-    RELATION_KEYWORDS,
-)
+try:
+    from scripts.load_to_lightrag import (
+        EMBEDDING_DIM,
+        EMBEDDING_MODEL_NAME,
+        LIGHTRAG_DIR,
+        RELATION_KEYWORDS,
+    )
+except ModuleNotFoundError:
+    from load_to_lightrag import (
+        EMBEDDING_DIM,
+        EMBEDDING_MODEL_NAME,
+        LIGHTRAG_DIR,
+        RELATION_KEYWORDS,
+    )
 
 
-DATE_PATTERN = re.compile(
-    r"\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b"
-)
-NUMBER_PATTERN = re.compile(
-    r"(?<![\w.])-?\d+(?:[.,]\d+)?(?![\w.])"
-)
-MATCH_SEPARATOR_PATTERN = re.compile(
-    r"[^\w]+", re.UNICODE
-)
+log = logging.getLogger(__name__)
+
+DATE_PATTERN = re.compile(r"\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b")
+NUMBER_PATTERN = re.compile(r"(?<![\w.])-?\d+(?:[.,]\d+)?(?![\w.])")
+MATCH_SEPARATOR_PATTERN = re.compile(r"[^\w]+", re.UNICODE)
+
+
+class LightRAGTokenTracker:
+    """Accumulate token usage reported by LightRAG's OpenAI adapter."""
+
+    def __init__(self) -> None:
+        self.total_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+
+    def add_usage(self, usage: dict[str, int]) -> None:
+        for key in self.total_usage:
+            self.total_usage[key] += int(usage.get(key, 0))
+
+    def get_usage(self) -> dict[str, int]:
+        return dict(self.total_usage)
 
 
 def normalize_match_text(text: str) -> str:
@@ -54,10 +78,7 @@ def contains_normalized_phrase(
     if not normalized_phrase:
         return False
 
-    return (
-        f" {normalized_phrase} "
-        in f" {normalized_query} "
-    )
+    return f" {normalized_phrase} " in f" {normalized_query} "
 
 
 def filter_value_noise(
@@ -72,9 +93,7 @@ def filter_value_noise(
     query_numbers: set[Decimal] = set()
     for match in NUMBER_PATTERN.finditer(query_without_dates):
         try:
-            query_numbers.add(
-                Decimal(match.group().replace(",", "."))
-            )
+            query_numbers.add(Decimal(match.group().replace(",", ".")))
         except InvalidOperation:
             continue
 
@@ -111,10 +130,8 @@ def filter_value_noise(
     filtered_relationships = [
         relationship
         for relationship in relationships
-        if str(relationship.get("src_id"))
-        not in removed_entity_names
-        and str(relationship.get("tgt_id"))
-        not in removed_entity_names
+        if str(relationship.get("src_id")) not in removed_entity_names
+        and str(relationship.get("tgt_id")) not in removed_entity_names
     ]
 
     return filtered_entities, filtered_relationships
@@ -134,10 +151,7 @@ def identifier_is_mentioned(
         f"{normalized_identifier}s",
         f"{normalized_identifier}es",
     }
-    return any(
-        f" {variant} " in f" {normalized_query} "
-        for variant in variants
-    )
+    return any(f" {variant} " in f" {normalized_query} " for variant in variants)
 
 
 def find_core_tables(
@@ -153,9 +167,7 @@ def find_core_tables(
 
     for entity in entities:
         entity_name = str(entity.get("entity_name") or "")
-        entity_type = str(
-            entity.get("entity_type") or ""
-        ).lower()
+        entity_type = str(entity.get("entity_type") or "").lower()
 
         if entity_type == "table":
             table_name = entity_name.removeprefix("TABLE:")
@@ -188,9 +200,7 @@ def find_core_tables(
     # Semantic fallback after LightRAG retrieval
     for entity in entities:
         entity_name = str(entity.get("entity_name") or "")
-        entity_type = str(
-            entity.get("entity_type") or ""
-        ).lower()
+        entity_type = str(entity.get("entity_type") or "").lower()
 
         if entity_type == "table":
             candidate = entity_name
@@ -213,9 +223,7 @@ def entity_from_storage(
 ) -> dict[str, Any]:
     """Convert a stored LightRAG node to a query-result entity"""
     entity = {
-        key: value
-        for key, value in node.items()
-        if key not in {"id", "entity_id"}
+        key: value for key, value in node.items() if key not in {"id", "entity_id"}
     }
     entity["entity_name"] = node["id"]
     return entity
@@ -226,9 +234,7 @@ def relationship_from_storage(
 ) -> dict[str, Any]:
     """Convert a stored LightRAG edge to a query-result relationship"""
     relationship = {
-        key: value
-        for key, value in edge.items()
-        if key not in {"source", "target"}
+        key: value for key, value in edge.items() if key not in {"source", "target"}
     }
     relationship["src_id"] = edge["source"]
     relationship["tgt_id"] = edge["target"]
@@ -260,10 +266,7 @@ async def expand_fk_join_paths(
     stored_nodes = await graph_storage.get_all_nodes()
     stored_edges = await graph_storage.get_all_edges()
 
-    nodes_by_id = {
-        str(node["id"]): node
-        for node in stored_nodes
-    }
+    nodes_by_id = {str(node["id"]): node for node in stored_nodes}
 
     def node_type(node_id: str) -> str:
         node = nodes_by_id.get(node_id, {})
@@ -290,15 +293,9 @@ async def expand_fk_join_paths(
         right = str(edge["target"])
 
         if keywords == has_column_keyword:
-            if (
-                node_type(left) == "table"
-                and node_type(right) == "column"
-            ):
+            if node_type(left) == "table" and node_type(right) == "column":
                 table_id, column_id = left, right
-            elif (
-                node_type(right) == "table"
-                and node_type(left) == "column"
-            ):
+            elif node_type(right) == "table" and node_type(left) == "column":
                 table_id, column_id = right, left
             else:
                 continue
@@ -307,15 +304,9 @@ async def expand_fk_join_paths(
             has_column_by_column[column_id] = edge
 
         else:
-            if (
-                node_type(left) == "value"
-                and node_type(right) == "column"
-            ):
+            if node_type(left) == "value" and node_type(right) == "column":
                 value_id, column_id = left, right
-            elif (
-                node_type(right) == "value"
-                and node_type(left) == "column"
-            ):
+            elif node_type(right) == "value" and node_type(left) == "column":
                 value_id, column_id = right, left
             else:
                 continue
@@ -325,11 +316,7 @@ async def expand_fk_join_paths(
 
     table_graph = nx.Graph()
     table_graph.add_nodes_from(
-        sorted(
-            node_id
-            for node_id in nodes_by_id
-            if node_type(node_id) == "table"
-        )
+        sorted(node_id for node_id in nodes_by_id if node_type(node_id) == "table")
     )
 
     fk_edges_by_table_pair: dict[
@@ -353,11 +340,7 @@ async def expand_fk_join_paths(
         left_table = table_by_column.get(left_column)
         right_table = table_by_column.get(right_column)
 
-        if (
-            left_table is None
-            or right_table is None
-            or left_table == right_table
-        ):
+        if left_table is None or right_table is None or left_table == right_table:
             continue
 
         table_pair = frozenset((left_table, right_table))
@@ -401,19 +384,13 @@ async def expand_fk_join_paths(
                     path,
                     path[1:],
                 ):
-                    selected_table_pairs.add(
-                        frozenset((path_left, path_right))
-                    )
+                    selected_table_pairs.add(frozenset((path_left, path_right)))
         except (nx.NetworkXNoPath, nx.NodeNotFound):
             continue
 
-    entities_by_name = {
-        str(entity["entity_name"]): entity
-        for entity in entities
-    }
+    entities_by_name = {str(entity["entity_name"]): entity for entity in entities}
     relationships_by_key = {
-        relationship_key(relationship): relationship
-        for relationship in relationships
+        relationship_key(relationship): relationship for relationship in relationships
     }
 
     def add_stored_entity(entity_id: str) -> None:
@@ -422,9 +399,7 @@ async def expand_fk_join_paths(
 
         stored_node = nodes_by_id.get(entity_id)
         if stored_node is not None:
-            entities_by_name[entity_id] = entity_from_storage(
-                stored_node
-            )
+            entities_by_name[entity_id] = entity_from_storage(stored_node)
 
     def add_stored_relationship(edge: dict[str, Any]) -> None:
         relationship = relationship_from_storage(edge)
@@ -462,7 +437,7 @@ async def expand_fk_join_paths(
             continue
 
         table_id = table_by_column.get(column_id)
-        if table_id not in selected_tables:
+        if table_id is None or table_id not in selected_tables:
             continue
 
         add_stored_entity(column_id)
@@ -488,20 +463,14 @@ async def expand_fk_join_paths(
     allowed_entity_names: set[str] = set()
 
     for entity_id, entity in entities_by_name.items():
-        entity_type = str(
-            entity.get("entity_type") or ""
-        ).lower()
+        entity_type = str(entity.get("entity_type") or "").lower()
 
-        if (
-            entity_type == "table"
-            and entity_id in selected_tables
-        ):
+        if entity_type == "table" and entity_id in selected_tables:
             allowed_entity_names.add(entity_id)
 
         elif (
             entity_type == "column"
-            and table_by_column.get(entity_id)
-            in selected_tables
+            and table_by_column.get(entity_id) in selected_tables
         ):
             allowed_entity_names.add(entity_id)
 
@@ -509,23 +478,19 @@ async def expand_fk_join_paths(
             column_id = column_by_value.get(entity_id)
             if (
                 column_id is not None
-                and table_by_column.get(column_id)
-                in selected_tables
+                and table_by_column.get(column_id) in selected_tables
             ):
                 allowed_entity_names.add(entity_id)
 
     pruned_entities = [
-        entities_by_name[entity_id]
-        for entity_id in sorted(allowed_entity_names)
+        entities_by_name[entity_id] for entity_id in sorted(allowed_entity_names)
     ]
 
     pruned_relationships = [
         relationship
         for relationship in relationships_by_key.values()
-        if str(relationship["src_id"])
-        in allowed_entity_names
-        and str(relationship["tgt_id"])
-        in allowed_entity_names
+        if str(relationship["src_id"]) in allowed_entity_names
+        and str(relationship["tgt_id"]) in allowed_entity_names
     ]
     pruned_relationships.sort(
         key=lambda relationship: (
@@ -538,86 +503,163 @@ async def expand_fk_join_paths(
     return pruned_entities, pruned_relationships
 
 
-async def query_lightrag(
-    db_name: str,
-    query: str,
-) -> dict[str, Any]:
-    """Retrieve and validate a database subgraph from LightRAG storage"""
-    load_dotenv(override=True)
+def format_subgraph_context(result: dict[str, Any]) -> str:
+    """Format a retrieved subgraph as compact schema context for Text-to-SQL."""
+    data = result.get("data")
+    if not isinstance(data, dict):
+        raise ValueError("LightRAG result has no structured data")
 
-    required_env_vars = (
-        "LLM_MODEL_NAME",
-        "LLM_BASE_URL",
-        "LLM_API_KEY",
+    entities = data.get("entities", [])
+    relationships = data.get("relationships", [])
+
+    table_descriptions: dict[str, str] = {}
+    columns_by_table: dict[str, list[str]] = defaultdict(list)
+    ungrouped_columns: list[str] = []
+    value_descriptions: list[str] = []
+
+    for entity in entities:
+        entity_name = str(entity.get("entity_name") or "")
+        entity_type = str(entity.get("entity_type") or "").lower()
+        description = str(entity.get("description") or entity_name).strip()
+
+        if entity_type == "table":
+            table_name = entity_name.removeprefix("TABLE:")
+            table_descriptions[table_name] = description
+        elif entity_type == "column":
+            full_name = entity_name.removeprefix("COL:")
+            table_name, separator, _ = full_name.partition(".")
+            if separator:
+                columns_by_table[table_name].append(description)
+            else:
+                ungrouped_columns.append(description)
+        elif entity_type == "value":
+            value_descriptions.append(description)
+
+    table_names = sorted(set(table_descriptions) | set(columns_by_table))
+    lines = ["Retrieved database schema:"]
+
+    for table_name in table_names:
+        lines.append("")
+        lines.append(
+            table_descriptions.get(
+                table_name,
+                f"TABLE {table_name}.",
+            )
+        )
+        for column_description in sorted(columns_by_table[table_name]):
+            lines.append(f"  - {column_description}")
+
+    if ungrouped_columns:
+        lines.extend(("", "Other retrieved columns:"))
+        lines.extend(f"  - {description}" for description in sorted(ungrouped_columns))
+
+    fk_descriptions = sorted(
+        {
+            str(relationship.get("description") or "").strip()
+            for relationship in relationships
+            if relationship.get("keywords") == RELATION_KEYWORDS["FK_REFERENCES"]
+            and str(relationship.get("description") or "").strip()
+        }
     )
-    missing_env_vars = [
-        name
-        for name in required_env_vars
-        if not os.getenv(name)
-    ]
-    if missing_env_vars:
-        raise RuntimeError(
-            "Missing required environment variables: "
-            f"{', '.join(missing_env_vars)}"
+    if fk_descriptions:
+        lines.extend(("", "Foreign-key relationships:"))
+        lines.extend(f"  - {description}" for description in fk_descriptions)
+
+    if value_descriptions:
+        lines.extend(("", "Relevant database values:"))
+        lines.extend(
+            f"  - {description}" for description in sorted(set(value_descriptions))
         )
 
-    llm_model_name = os.environ["LLM_MODEL_NAME"]
-    llm_base_url = os.environ["LLM_BASE_URL"]
-    llm_api_key = os.environ["LLM_API_KEY"]
+    return "\n".join(lines).strip()
 
-    embedding_model = SentenceTransformer(
-        EMBEDDING_MODEL_NAME,
-    )
 
-    async def embedding_func(texts: list[str]):
-        return await asyncio.to_thread(
-            embedding_model.encode,
-            texts,
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-            show_progress_bar=False,
+class LightRAGRetriever:
+    """Reuse one LightRAG instance for multiple retrieval queries."""
+
+    def __init__(
+        self,
+        db_name: str,
+        llm_model_name: str,
+        llm_base_url: str,
+        llm_api_key: str,
+        working_dir: Path | None = None,
+        verbose: bool = False,
+    ) -> None:
+        self.db_name = db_name
+        self.llm_model_name = llm_model_name
+        self.llm_base_url = llm_base_url
+        self.llm_api_key = llm_api_key
+        self.working_dir = (working_dir or LIGHTRAG_DIR / db_name).resolve()
+        self.verbose = verbose
+        self.token_tracker = LightRAGTokenTracker()
+        self._initialized = False
+
+        if not self.working_dir.exists():
+            raise FileNotFoundError(
+                "LightRAG storage does not exist. "
+                "Run load_to_lightrag.py first: "
+                f"{self.working_dir}"
+            )
+
+        log.info(
+            "Loading SentenceTransformer model from %s",
+            EMBEDDING_MODEL_NAME,
+        )
+        self.embedding_model = SentenceTransformer(
+            EMBEDDING_MODEL_NAME,
         )
 
-    async def llm_model_func(
-        prompt: str,
-        system_prompt: str | None = None,
-        history_messages: list[dict[str, Any]] | None = None,
-        **kwargs: Any,
-    ) -> str:
-        return await openai_complete_if_cache(
-            model=llm_model_name,
-            prompt=prompt,
-            system_prompt=system_prompt,
-            history_messages=history_messages or [],
-            api_key=llm_api_key,
-            base_url=llm_base_url,
-            **kwargs,
+        async def embedding_func(texts: list[str]):
+            return await asyncio.to_thread(
+                self.embedding_model.encode,
+                texts,
+                normalize_embeddings=True,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )
+
+        async def llm_model_func(
+            prompt: str,
+            system_prompt: str | None = None,
+            history_messages: list[dict[str, Any]] | None = None,
+            **kwargs: Any,
+        ) -> str:
+            kwargs.pop("token_tracker", None)
+            return await openai_complete_if_cache(
+                model=self.llm_model_name,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                history_messages=history_messages or [],
+                api_key=self.llm_api_key,
+                base_url=self.llm_base_url,
+                token_tracker=self.token_tracker,
+                **kwargs,
+            )
+
+        self.rag = LightRAG(
+            working_dir=str(self.working_dir),
+            embedding_func=EmbeddingFunc(
+                embedding_dim=EMBEDDING_DIM,
+                max_token_size=8192,
+                model_name=EMBEDDING_MODEL_NAME,
+                func=embedding_func,
+            ),
+            llm_model_func=llm_model_func,
+            llm_model_name=self.llm_model_name,
         )
 
-    working_dir = LIGHTRAG_DIR / db_name
-    if not working_dir.exists():
-        raise FileNotFoundError(
-            "LightRAG storage does not exist. "
-            "Run load_to_lightrag.py first: "
-            f"{working_dir}"
-        )
+    async def initialize(self) -> None:
+        if self._initialized:
+            return
+        await self.rag.initialize_storages()
+        self._initialized = True
 
-    rag = LightRAG(
-        working_dir=str(working_dir),
-        embedding_func=EmbeddingFunc(
-            embedding_dim=EMBEDDING_DIM,
-            max_token_size=8192,
-            model_name=EMBEDDING_MODEL_NAME,
-            func=embedding_func,
-        ),
-        llm_model_func=llm_model_func,
-        llm_model_name=llm_model_name,
-    )
+    async def retrieve(self, query: str) -> dict[str, Any]:
+        """Retrieve, post-process and validate a database subgraph."""
+        await self.initialize()
 
-    await rag.initialize_storages()
-
-    try:
-        result = await rag.aquery_data(
+        result = await self.rag.aquery_data(
             query=query,
             param=QueryParam(
                 mode="hybrid",
@@ -632,15 +674,12 @@ async def query_lightrag(
 
         if result.get("status") != "success":
             raise RuntimeError(
-                "LightRAG retrieval failed: "
-                f"{result.get('message', 'unknown error')}"
+                f"LightRAG retrieval failed: {result.get('message', 'unknown error')}"
             )
 
         data = result.get("data")
         if not isinstance(data, dict):
-            raise RuntimeError(
-                "LightRAG returned no structured retrieval data"
-            )
+            raise RuntimeError("LightRAG returned no structured retrieval data")
 
         entities = data.get("entities", [])
         relationships = data.get("relationships", [])
@@ -655,7 +694,7 @@ async def query_lightrag(
             relationships=relationships,
         )
         entities, relationships = await expand_fk_join_paths(
-            graph_storage=rag.chunk_entity_relation_graph,
+            graph_storage=self.rag.chunk_entity_relation_graph,
             query=query,
             entities=entities,
             relationships=relationships,
@@ -666,27 +705,13 @@ async def query_lightrag(
         data["entities"] = entities
         data["relationships"] = relationships
 
-        print("LightRAG retrieval post-processing completed:")
-        print(
-            "  entities: "
-            f"{retrieved_entity_count} retrieved, "
-            f"{len(entities)} after filtering and FK expansion"
-        )
-        print(
-            "  relationships: "
-            f"{retrieved_relationship_count} retrieved, "
-            f"{len(relationships)} after filtering and FK expansion"
-        )
-
         empty_entity_names = [
             entity
             for entity in entities
             if not str(entity.get("entity_name") or "").strip()
         ]
         if empty_entity_names:
-            raise RuntimeError(
-                "Retrieved subgraph contains empty entity names"
-            )
+            raise RuntimeError("Retrieved subgraph contains empty entity names")
 
         relationship_endpoints = {
             str(endpoint)
@@ -698,10 +723,7 @@ async def query_lightrag(
             if endpoint
         }
 
-        returned_entity_names = {
-            str(entity["entity_name"])
-            for entity in entities
-        }
+        returned_entity_names = {str(entity["entity_name"]) for entity in entities}
         missing_returned_endpoints = sorted(
             relationship_endpoints - returned_entity_names
         )
@@ -712,51 +734,90 @@ async def query_lightrag(
                 f"{missing_returned_endpoints[:5]}"
             )
 
-        existing_endpoints = (
-            await rag.chunk_entity_relation_graph.has_nodes_batch(
-                sorted(relationship_endpoints)
-            )
+        existing_endpoints = await self.rag.chunk_entity_relation_graph.has_nodes_batch(
+            sorted(relationship_endpoints)
         )
-        missing_endpoints = sorted(
-            relationship_endpoints - existing_endpoints
-        )
+        missing_endpoints = sorted(relationship_endpoints - existing_endpoints)
         if missing_endpoints:
             raise RuntimeError(
                 "Retrieved relationships reference entities "
                 f"missing from storage: {missing_endpoints[:5]}"
             )
 
-        print("LightRAG retrieval validation passed:")
-        print(f"  entities: {len(entities)}")
-        print(f"  relationships: {len(relationships)}")
-        print(f"  chunks: {len(chunks)}")
-
-        subgraph = {
-            "entities": entities,
-            "relationships": relationships,
-        }
-        print("\nRetrieved subgraph:")
-        print(
-            json.dumps(
-                subgraph,
-                ensure_ascii=False,
-                indent=2,
-                default=str,
+        if self.verbose:
+            print("LightRAG retrieval post-processing completed:")
+            print(
+                "  entities: "
+                f"{retrieved_entity_count} retrieved, "
+                f"{len(entities)} after filtering and FK expansion"
             )
-        )
+            print(
+                "  relationships: "
+                f"{retrieved_relationship_count} retrieved, "
+                f"{len(relationships)} after filtering and FK expansion"
+            )
+            print("LightRAG retrieval validation passed:")
+            print(f"  entities: {len(entities)}")
+            print(f"  relationships: {len(relationships)}")
+            print(f"  chunks: {len(chunks)}")
+
+            subgraph = {
+                "entities": entities,
+                "relationships": relationships,
+            }
+            print("\nRetrieved subgraph:")
+            print(
+                json.dumps(
+                    subgraph,
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                )
+            )
 
         return result
 
+    async def close(self) -> None:
+        if not self._initialized:
+            return
+        await self.rag.finalize_storages()
+        self._initialized = False
+
+
+async def query_lightrag(
+    db_name: str,
+    query: str,
+) -> dict[str, Any]:
+    """Retrieve and validate a database subgraph from LightRAG storage."""
+    load_dotenv(override=True)
+
+    required_env_vars = (
+        "LLM_MODEL_NAME",
+        "LLM_BASE_URL",
+        "LLM_API_KEY",
+    )
+    missing_env_vars = [name for name in required_env_vars if not os.getenv(name)]
+    if missing_env_vars:
+        raise RuntimeError(
+            f"Missing required environment variables: {', '.join(missing_env_vars)}"
+        )
+
+    retriever = LightRAGRetriever(
+        db_name=db_name,
+        llm_model_name=os.environ["LLM_MODEL_NAME"],
+        llm_base_url=os.environ["LLM_BASE_URL"],
+        llm_api_key=os.environ["LLM_API_KEY"],
+        verbose=True,
+    )
+    try:
+        return await retriever.retrieve(query)
     finally:
-        await rag.finalize_storages()
+        await retriever.close()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=(
-            "Retrieve a relevant database subgraph "
-            "from LightRAG storage"
-        )
+        description=("Retrieve a relevant database subgraph from LightRAG storage")
     )
     parser.add_argument(
         "--db",
