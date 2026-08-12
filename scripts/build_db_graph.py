@@ -52,6 +52,11 @@ KNOWLEDGE_DIR = BASE_ARTIFACTS_DIR / "db_knowledge"
 SCHEMA_DIR = BASE_ARTIFACTS_DIR / "m_schemas"
 OUTPUT_DIR = BASE_ARTIFACTS_DIR / "graphs"
 
+MAX_TEXT_DISTINCT_VALUES = 200
+MAX_NUMERIC_DISTINCT_VALUES = 20
+MAX_VALUE_NODES_PER_COLUMN = 20
+MAX_VALUE_LENGTH = 100
+
 
 def parse_semantic_schema(semantic_file: Path) -> Dict[str, Dict[str, str]]:
     """
@@ -155,45 +160,107 @@ def should_create_value_nodes(col_stats: Dict[str, Any], col_name: str, data_typ
     Determines whether to create value nodes for a given column.
     Skips IDs, dates/timestamps, and high-cardinality numeric columns.
     """
-    n_distinct_fraction = col_stats.get("n_distinct_fraction")
-    col_lower = col_name.lower()
-    
-    if col_lower.endswith("_id") or col_lower == "id":
+    most_common_vals = col_stats.get("most_common_vals") or []
+    if not most_common_vals:
         return False
-    
+
     if is_date_or_timestamp(data_type):
+            return False
+
+    column_name = col_name.casefold()
+    normalized_type = data_type.casefold()
+
+    is_numeric = any(
+        type_name in normalized_type
+        for type_name in (
+            "smallint",
+            "integer",
+            "bigint",
+            "numeric",
+            "decimal",
+            "real",
+            "double precision",
+            "float",
+            "serial",
+        )
+    )
+
+    is_textual = any(
+        type_name in normalized_type
+        for type_name in (
+            "character",
+            "varchar",
+            "text",
+            "boolean",
+            "bool",
+            "enum",
+        )
+    )
+
+    # Covers id, user_id and other conventional identifier names
+    if column_name == "id" or column_name.endswith("_id"):
         return False
-    
-    if n_distinct_fraction is not None:
-        if n_distinct_fraction <= 0.05: 
-            return True
-        elif n_distinct_fraction <= 0.20:
-            return bool(col_stats.get("most_common_vals"))
-    
-    return False
+
+    # BIRD schemas also use names such as userid, postid
+    if is_numeric and column_name.endswith("id"):
+        return False
+
+    raw_n_distinct = col_stats.get("n_distinct_absolute")
+    if raw_n_distinct is None:
+        return False
+
+    try:
+        n_distinct = int(float(raw_n_distinct))
+    except (TypeError, ValueError):
+        return False
+
+    if n_distinct <= 0:
+        return False
+
+    if is_numeric:
+        return n_distinct <= MAX_NUMERIC_DISTINCT_VALUES
+
+    if is_textual:
+        return n_distinct <= MAX_TEXT_DISTINCT_VALUES
+
+    # Unknown and database-specific types are handled conservatively
+    return n_distinct <= MAX_NUMERIC_DISTINCT_VALUES
 
 
 def get_values_to_include(col_stats: Dict[str, Any]) -> List[str]:
     """
     Determines how many values to include as nodes.
     """
-    n_distinct_fraction = col_stats.get("n_distinct_fraction")
     most_common_vals = col_stats.get("most_common_vals") or []
-    
-    # Remove only null values
-    most_common_vals = [v for v in most_common_vals if v is not None]
-    
-    if not most_common_vals:
-        return []
-    
-    if n_distinct_fraction is None:
-        return most_common_vals[:10]
-    elif n_distinct_fraction <= 0.05:
-        return most_common_vals  
-    elif n_distinct_fraction <= 0.20:
-        return most_common_vals[:20]
-    else:
-        return most_common_vals[:10]
+
+    values: List[str] = []
+    seen: set[str] = set()
+
+    for raw_value in most_common_vals:
+        if raw_value is None:
+            continue
+
+        value = str(raw_value)
+
+        # Empty and whitespace-only values do not help schema retrieval
+        if not value.strip():
+            continue
+
+        # Avoid adding long free-text fragments as graph entities.
+        if len(value) > MAX_VALUE_LENGTH:
+            continue
+
+        if value in seen:
+            continue
+
+        seen.add(value)
+        values.append(value)
+
+        if len(values) >= MAX_VALUE_NODES_PER_COLUMN:
+            break
+
+    return values
+
 
 def sanitize_value_for_id(value: str) -> str:
     """
