@@ -161,6 +161,7 @@ class LightRAGText2SQLGenerator(Text2SQLGenerator):
                 "user_query": user_query,
                 "status": result.get("status"),
                 "generated_query": result.get("query"),
+                "error": result.get("error"),
                 "schema_context": schema_context,
                 "schema_context_chars": len(schema_context),
                 "schema_context_tokens_cl100k": len(

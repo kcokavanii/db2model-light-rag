@@ -647,6 +647,8 @@ class LightRAGRetriever:
             ),
             llm_model_func=llm_model_func,
             llm_model_name=self.llm_model_name,
+            embedding_func_max_async=1,
+            default_embedding_timeout=300,
         )
 
     async def initialize(self) -> None:
