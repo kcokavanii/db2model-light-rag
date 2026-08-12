@@ -1,5 +1,6 @@
 from typing import Any, Dict
 
+
 class TokenTrackingClient:
     def __init__(self, client: Any):
         self.client = client
@@ -18,11 +19,14 @@ class TokenTrackingClient:
             if isinstance(usage, dict):
                 prompt = usage.get("prompt_tokens", 0)
                 completion = usage.get("completion_tokens", 0)
-                total = usage.get("total_tokens", 0)
+                total = usage.get("total_tokens")
             else:
                 prompt = getattr(usage, "prompt_tokens", 0)
                 completion = getattr(usage, "completion_tokens", 0)
-                total = getattr(usage, "total_tokens", 0)
+                total = getattr(usage, "total_tokens", None)
+
+            if total is None:
+                total = prompt + completion
 
             self.total_usage["prompt_tokens"] += prompt
             self.total_usage["completion_tokens"] += completion
