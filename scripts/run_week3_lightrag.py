@@ -35,13 +35,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from benchmarks.bird import BenchmarkBIRD  # noqa: E402
-from benchmarks.evaluate_bird import (  # noqa: E402
+from benchmarks.bird import BenchmarkBIRD 
+from benchmarks.evaluate_bird import ( 
     print_evaluation_report,
     run_evaluation,
     save_manual_check,
 )
-from scripts.query_lightrag import (  # noqa: E402
+from scripts.query_lightrag import ( 
     LIGHTRAG_DIR,
     LightRAGRetriever,
     format_subgraph_context,
