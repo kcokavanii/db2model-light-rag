@@ -40,6 +40,10 @@ log = logging.getLogger(__name__)
 DATE_PATTERN = re.compile(r"\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b")
 NUMBER_PATTERN = re.compile(r"(?<![\w.])-?\d+(?:[.,]\d+)?(?![\w.])")
 MATCH_SEPARATOR_PATTERN = re.compile(r"[^\w]+", re.UNICODE)
+COLUMN_DATA_TYPE_PATTERN = re.compile(
+    r"\bData type:\s*(?P<data_type>[^.]+)\.",
+    re.IGNORECASE,
+)
 
 
 class LightRAGTokenTracker:
@@ -572,6 +576,92 @@ def format_subgraph_context(result: dict[str, Any]) -> str:
         )
 
     return "\n".join(lines).strip()
+
+
+def _parse_retrieved_column(
+    entity: dict[str, Any],
+) -> tuple[str, str, str]:
+    """Return table name, column name and SQL type from a column entity."""
+    entity_name = str(entity.get("entity_name") or "")
+    full_name = entity_name.removeprefix("COL:")
+
+    table_name, separator, column_name = full_name.partition(".")
+    if not separator or not table_name or not column_name:
+        raise ValueError(f"Invalid LightRAG column entity name: {entity_name!r}")
+
+    description = str(entity.get("description") or "")
+    type_match = COLUMN_DATA_TYPE_PATTERN.search(description)
+    if type_match is None:
+        raise ValueError(f"Column entity has no data type: {entity_name!r}")
+
+    data_type = type_match.group("data_type").strip().upper()
+    if not data_type:
+        raise ValueError(f"Column entity has an empty data type: {entity_name!r}")
+
+    return table_name, column_name, data_type
+
+
+def format_baseline_subgraph_context(result: dict[str, Any]) -> str:
+    """Format retrieved entities like the full-schema baseline.
+
+    Only retrieved tables and columns with their SQL types are included.
+    Semantic descriptions, constraints, values and FK descriptions are
+    intentionally excluded because the baseline context does not contain them.
+    """
+    data = result.get("data")
+    if not isinstance(data, dict):
+        raise ValueError("LightRAG result has no structured data")
+
+    entities = data.get("entities", [])
+    if not isinstance(entities, list):
+        raise ValueError("LightRAG entities must be a list")
+
+    retrieved_tables: set[str] = set()
+    columns_by_table: dict[str, dict[str, str]] = defaultdict(dict)
+
+    for entity in entities:
+        if not isinstance(entity, dict):
+            raise ValueError("LightRAG entity must be a dictionary")
+
+        entity_name = str(entity.get("entity_name") or "")
+        entity_type = str(entity.get("entity_type") or "").casefold()
+
+        if entity_type == "table":
+            table_name = entity_name.removeprefix("TABLE:")
+            if not table_name:
+                raise ValueError(
+                    f"Invalid LightRAG table entity name: {entity_name!r}"
+                )
+            retrieved_tables.add(table_name)
+        elif entity_type == "column":
+            table_name, column_name, data_type = _parse_retrieved_column(entity)
+            retrieved_tables.add(table_name)
+
+            existing_type = columns_by_table[table_name].get(column_name)
+            if existing_type is not None and existing_type != data_type:
+                raise ValueError(
+                    "Conflicting types for retrieved column "
+                    f"{table_name}.{column_name}: "
+                    f"{existing_type!r} and {data_type!r}"
+                )
+
+            columns_by_table[table_name][column_name] = data_type
+
+    if not retrieved_tables:
+        raise ValueError("LightRAG returned no table or column entities")
+
+    lines: list[str] = []
+
+    for table_name in sorted(retrieved_tables):
+        if lines:
+            lines.append("")
+
+        lines.append(f"TABLE {table_name}")
+
+        for column_name, data_type in sorted(columns_by_table[table_name].items()):
+            lines.append(f"  - {column_name} ({data_type})")
+
+    return "\n".join(lines)
 
 
 class LightRAGRetriever:

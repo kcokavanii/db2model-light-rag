@@ -35,18 +35,18 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from benchmarks.bird import BenchmarkBIRD 
-from benchmarks.evaluate_bird import ( 
+from benchmarks.bird import BenchmarkBIRD  # noqa: E402
+from benchmarks.evaluate_bird import (  # noqa: E402
     print_evaluation_report,
     run_evaluation,
     save_manual_check,
 )
-from scripts.query_lightrag import ( 
+from scripts.query_lightrag import (  # noqa: E402
     LIGHTRAG_DIR,
     LightRAGRetriever,
-    format_subgraph_context,
+    format_baseline_subgraph_context,
 )
-from src.adv_text2sql.mcp_servers.text2sql_tool.src.text2sql_implementation import (  
+from src.adv_text2sql.mcp_servers.text2sql_tool.src.text2sql_implementation import (  # noqa: E402
     Text2SQLGenerator,
 )
 
@@ -131,7 +131,7 @@ class LightRAGText2SQLGenerator(Text2SQLGenerator):
 
         try:
             retrieval_result = await retriever.retrieve(user_query)
-            schema_context = format_subgraph_context(retrieval_result)
+            schema_context = format_baseline_subgraph_context(retrieval_result)
 
             self.db_schema = schema_context
             self.system_prompt = self._create_system_prompt()
@@ -455,6 +455,22 @@ async def run_benchmark(args: argparse.Namespace) -> Path:
         "target_model": target_model_name,
         "retrieval_model": retrieval_model_name,
         "embedding_model": "BAAI/bge-m3",
+        "context_format": {
+            "name": "baseline_retrieved_entities",
+            "version": 1,
+            "included": [
+                "table names",
+                "retrieved column names",
+                "column types",
+            ],
+            "excluded": [
+                "semantic descriptions",
+                "constraints",
+                "date ranges",
+                "foreign-key descriptions",
+                "retrieved values",
+            ],
+        },
         "source_storage": str(source_storage),
         "run_storage": str(run_storage),
         "keyword_cache": (
