@@ -7,8 +7,8 @@
     "ves_reward": 0.0,
     "time_ratio": 0.0,
     "gold_sql": "SELECT T1.account_id, T2.A2, T2.A3 FROM account AS T1 INNER JOIN district AS T2 ON T1.district_id = T2.district_id WHERE T1.frequency = 'POPLATEK PO OBRATU' AND TO_CHAR(CAST(T1.date AS TIMESTAMP), 'YYYY') = '1993'",
-    "predicted_sql": "SELECT \n    a.account_id, \n    d.a2 AS district_name, \n    d.a3 AS district_region \nFROM \n    account a\nJOIN \n    district d ON a.district_id = d.district_id\nJOIN \n    trans t ON a.account_id = t.account_id\nWHERE \n    EXTRACT(YEAR FROM a.date::date) = 1993 \n    AND t.type LIKE '%POPLATEK PO OBRATU%' \nGROUP BY \n    a.account_id, d.a2, d.a3;",
-    "error": null
+    "predicted_sql": "SELECT *\n            FROM (\n                SELECT DISTINCT a.account_id, \n    d.a2 AS district_name, \n    d.a3 AS district_region \n                FROM account a \nJOIN \n    district d ON a.district_id = d.district_id \nJOIN \n    trans t ON a.account_id = t.account_id \nWHERE \n    EXTRACT(YEAR FROM a.date::date) = 1993 \n    AND t.operation LIKE '%POPLATEK PO OBRATU%' \n            ) sub\n            ORDER BY a.account_id ;",
+    "error": "(psycopg.errors.UndefinedTable) missing FROM-clause entry for table \"a\"\nLINE 15:             ORDER BY a.account_id ;\n                              ^\n[SQL: SELECT *\n            FROM (\n                SELECT DISTINCT a.account_id, \n    d.a2 AS district_name, \n    d.a3 AS district_region \n                FROM account a \nJOIN \n    district d ON a.district_id = d.district_id \nJOIN \n    trans t ON a.account_id = t.account_id \nWHERE \n    EXTRACT(YEAR FROM a.date::date) = 1993 \n    AND t.operation LIKE '%%POPLATEK PO OBRATU%%' \n            ) sub\n            ORDER BY a.account_id ;]\n(Background on this error at: https://sqlalche.me/e/20/f405)"
   },
   {
     "question_id": "135",
@@ -18,7 +18,7 @@
     "ves_reward": 0.0,
     "time_ratio": 0.0,
     "gold_sql": "SELECT COUNT(T1.account_id) FROM trans AS T1 INNER JOIN account AS T2 ON T1.account_id = T2.account_id WHERE T1.balance < 0 AND T1.operation = 'VYBER KARTOU' AND T2.frequency = 'POPLATEK MESICNE'",
-    "predicted_sql": "SELECT COUNT(DISTINCT t1.account_id) AS negative_balance_accounts\nFROM trans t1\nJOIN account t2 ON t1.account_id = t2.account_id\nWHERE t1.operation LIKE '%VYBER KARTOU%' \nAND t2.frequency LIKE '%POPLATEK MESICNE%' \nAND t1.balance < 0;",
+    "predicted_sql": "SELECT COUNT(DISTINCT t1.account_id) AS negative_balance_accounts\nFROM trans t1\nJOIN account t2 ON t1.account_id = t2.account_id\nWHERE t1.operation LIKE '%VYBER KARTOU%' \nAND t1.balance < 0 \nAND t2.frequency LIKE '%POPLATEK MESICNE%';",
     "error": null
   },
   {
@@ -29,8 +29,8 @@
     "ves_reward": 0.0,
     "time_ratio": 0.0,
     "gold_sql": "SELECT T1.account_id FROM account AS T1 INNER JOIN disp AS T2 ON T1.account_id = T2.account_id INNER JOIN client AS T3 ON T2.client_id = T3.client_id INNER JOIN district AS T4 ON T4.district_id = T1.district_id WHERE T2.client_id = (SELECT client_id FROM client ORDER BY birth_date DESC NULLS LAST LIMIT 1) GROUP BY T4.A11, T1.account_id",
-    "predicted_sql": "SELECT DISTINCT a.account_id\nFROM account a\nJOIN client c ON a.district_id = c.district_id\nWHERE (\n    \n    c.birth_date IN (\n        SELECT MIN(birth_date)\n        FROM client\n    )\n) AND (\n    \n    c.client_id IN (\n        SELECT client_id\n        FROM (\n            SELECT client_id, AVG(a11) AS avg_salary\n            FROM account a\n            JOIN client c ON a.district_id = c.district_id\n            GROUP BY client_id\n        ) subquery\n        WHERE avg_salary = (\n            SELECT MAX(avg_salary)\n            FROM (\n                SELECT AVG(a11) AS avg_salary\n                FROM account a\n                JOIN client c ON a.district_id = c.district_id\n                GROUP BY client_id\n            ) max_subquery\n        )\n    )\n);",
-    "error": "(psycopg.errors.UndefinedColumn) column \"a11\" does not exist\nLINE 15:             SELECT client_id, AVG(a11) AS avg_salary\n                                           ^\n[SQL: SELECT DISTINCT a.account_id\nFROM account a\nJOIN client c ON a.district_id = c.district_id\nWHERE (\n    \n    c.birth_date IN (\n        SELECT MIN(birth_date)\n        FROM client\n    )\n) AND (\n    \n    c.client_id IN (\n        SELECT client_id\n        FROM (\n            SELECT client_id, AVG(a11) AS avg_salary\n            FROM account a\n            JOIN client c ON a.district_id = c.district_id\n            GROUP BY client_id\n        ) subquery\n        WHERE avg_salary = (\n            SELECT MAX(avg_salary)\n            FROM (\n                SELECT AVG(a11) AS avg_salary\n                FROM account a\n                JOIN client c ON a.district_id = c.district_id\n                GROUP BY client_id\n            ) max_subquery\n        )\n    )\n);]\n(Background on this error at: https://sqlalche.me/e/20/f405)"
+    "predicted_sql": "SELECT DISTINCT a.account_id\nFROM account a\nJOIN client c ON a.district_id = c.district_id\nWHERE (\n    \n    c.birth_date IN (\n        SELECT MIN(birth_date)\n        FROM client\n    )\n) AND (\n    \n    c.client_id IN (\n        SELECT client_id\n        FROM (\n            SELECT client_id, AVG(a11) AS avg_salary\n            FROM account a\n            JOIN client c ON a.district_id = c.district_id\n            GROUP BY client_id\n        ) subquery\n        WHERE avg_salary = (\n            SELECT MAX(avg_salary)\n            FROM (\n                SELECT AVG(a11) AS avg_salary\n                FROM account a\n                JOIN client c ON a.district_id = c.district_id\n                GROUP BY client_id\n            ) subquery_max\n        )\n    )\n);",
+    "error": "(psycopg.errors.UndefinedColumn) column \"a11\" does not exist\nLINE 15:             SELECT client_id, AVG(a11) AS avg_salary\n                                           ^\n[SQL: SELECT DISTINCT a.account_id\nFROM account a\nJOIN client c ON a.district_id = c.district_id\nWHERE (\n    \n    c.birth_date IN (\n        SELECT MIN(birth_date)\n        FROM client\n    )\n) AND (\n    \n    c.client_id IN (\n        SELECT client_id\n        FROM (\n            SELECT client_id, AVG(a11) AS avg_salary\n            FROM account a\n            JOIN client c ON a.district_id = c.district_id\n            GROUP BY client_id\n        ) subquery\n        WHERE avg_salary = (\n            SELECT MAX(avg_salary)\n            FROM (\n                SELECT AVG(a11) AS avg_salary\n                FROM account a\n                JOIN client c ON a.district_id = c.district_id\n                GROUP BY client_id\n            ) subquery_max\n        )\n    )\n);]\n(Background on this error at: https://sqlalche.me/e/20/f405)"
   },
   {
     "question_id": "89",
@@ -49,7 +49,7 @@
     "difficulty": "moderate",
     "score": 1,
     "ves_reward": 0.75,
-    "time_ratio": 0.9903,
+    "time_ratio": 0.9889,
     "gold_sql": "SELECT T1.A2 FROM District AS T1 INNER JOIN Account AS T2 ON T1.District_id = T2.District_id INNER JOIN Loan AS T3 ON T2.Account_id = T3.Account_id WHERE T3.status = 'A' GROUP BY T1.District_id ORDER BY COUNT(T2.Account_id) DESC NULLS LAST LIMIT 1",
     "predicted_sql": "SELECT d.a2 AS district_name\nFROM district d\nJOIN account a ON d.district_id = a.district_id\nJOIN loan l ON a.account_id = l.account_id\nWHERE l.status = 'A'\nGROUP BY d.a2\nORDER BY COUNT(l.loan_id) DESC\nLIMIT 1;",
     "error": null
@@ -58,11 +58,11 @@
     "question_id": "136",
     "db_id": "financial",
     "difficulty": "moderate",
-    "score": 1,
-    "ves_reward": 1.0,
-    "time_ratio": 1.0195,
+    "score": 0,
+    "ves_reward": 0.0,
+    "time_ratio": 0.0,
     "gold_sql": "SELECT COUNT(T1.account_id) FROM account AS T1 INNER JOIN loan AS T2 ON T1.account_id = T2.account_id WHERE T2.date BETWEEN '1995-01-01' AND '1997-12-31' AND T1.frequency = 'POPLATEK MESICNE' AND T2.amount >= 250000",
-    "predicted_sql": "SELECT COUNT(DISTINCT l.account_id) AS approved_loans_count\nFROM loan l\nJOIN account a ON l.account_id = a.account_id\nWHERE \n    l.date BETWEEN '1995-01-01' AND '1997-12-31'\n    AND l.amount >= 250000\n    AND a.frequency LIKE '%POPLATEK MESICNE%';",
+    "predicted_sql": "SELECT COUNT(DISTINCT l.account_id) AS approved_loans_count\nFROM loan l\nJOIN account a ON l.account_id = a.account_id\nWHERE \n    l.date BETWEEN '1995-01-01' AND '1997-12-31'\n    AND l.amount >= 250000\n    AND a.frequency = 'POPLATEK MESICNE'\n    AND l.status = 'APPROVED';",
     "error": null
   },
   {
@@ -93,9 +93,9 @@
     "difficulty": "moderate",
     "score": 1,
     "ves_reward": 1.0,
-    "time_ratio": 1.0128,
+    "time_ratio": 1.0296,
     "gold_sql": "SELECT COUNT(T1.account_id) FROM account AS T1 INNER JOIN district AS T2 ON T1.district_id = T2.district_id INNER JOIN loan AS T3 ON T1.account_id = T3.account_id WHERE T1.district_id = 1 AND (T3.status = 'C' OR T3.status = 'D')",
-    "predicted_sql": "SELECT COUNT(DISTINCT t1.account_id) AS active_accounts_count\nFROM account AS t1\nJOIN loan AS t2 ON t1.account_id = t2.account_id\nWHERE t2.status IN ('C', 'D') \nAND t1.district_id = 1;",
+    "predicted_sql": "SELECT COUNT(DISTINCT a.account_id) AS active_accounts_count\nFROM account a\nJOIN loan l ON a.account_id = l.account_id\nWHERE l.status IN ('C', 'D') \nAND a.district_id = 1;",
     "error": null
   },
   {
@@ -128,7 +128,7 @@
     "ves_reward": 0.0,
     "time_ratio": 0.0,
     "gold_sql": "SELECT T4.birth_date FROM loan AS T1 INNER JOIN account AS T2 ON T1.account_id = T2.account_id INNER JOIN disp AS T3 ON T2.account_id = T3.account_id INNER JOIN client AS T4 ON T3.client_id = T4.client_id WHERE T1.date = '1996-01-03' AND T1.amount = 98832",
-    "predicted_sql": "SELECT DISTINCT c.birth_date \nFROM client c\nJOIN account a ON c.district_id = a.district_id \nJOIN loan l ON a.account_id = l.account_id \nWHERE l.amount::text LIKE '98832' \nAND TO_CHAR(l.date, 'YYYY-MM-DD') LIKE '1996-01-03';",
+    "predicted_sql": "SELECT DISTINCT c.birth_date \nFROM client c\nJOIN account a ON c.district_id = a.district_id\nJOIN loan l ON a.account_id = l.account_id\nWHERE l.amount = '98832' AND EXTRACT(YEAR FROM l.date::date) = 1996;",
     "error": null
   },
   {
@@ -157,12 +157,12 @@
     "question_id": "103",
     "db_id": "financial",
     "difficulty": "simple",
-    "score": 1,
-    "ves_reward": 1.0,
-    "time_ratio": 1.014,
+    "score": 0,
+    "ves_reward": 0.0,
+    "time_ratio": 0.0,
     "gold_sql": "SELECT T2.client_id FROM client AS T1 INNER JOIN disp AS T2 ON T1.client_id = T2.client_id INNER JOIN card AS T3 ON T2.disp_id = T3.disp_id WHERE T3.issued = '1994-03-03'",
-    "predicted_sql": "SELECT DISTINCT c.client_id\nFROM card AS ca\nJOIN disp AS d ON ca.disp_id = d.disp_id\nJOIN client AS c ON d.client_id = c.client_id\nWHERE ca.issued::date = '1994-03-03' \nLIMIT 1;",
-    "error": null
+    "predicted_sql": "SELECT DISTINCT c.client_id\nFROM card AS ca\nJOIN disp AS d ON ca.disp_id = d.disp_id\nJOIN client AS c ON d.client_id = c.client_id\nWHERE TO_DATE(ca.issued, 'YYYY/MM/DD') = '1994-03-03';",
+    "error": "(psycopg.errors.UndefinedFunction) function to_date(date, unknown) does not exist\nLINE 5: WHERE TO_DATE(ca.issued, 'YYYY/MM/DD') = '1994-03-03';\n              ^\nHINT:  No function matches the given name and argument types. You might need to add explicit type casts.\n[SQL: SELECT DISTINCT c.client_id\nFROM card AS ca\nJOIN disp AS d ON ca.disp_id = d.disp_id\nJOIN client AS c ON d.client_id = c.client_id\nWHERE TO_DATE(ca.issued, 'YYYY/MM/DD') = '1994-03-03';]\n(Background on this error at: https://sqlalche.me/e/20/f405)"
   },
   {
     "question_id": "102",
@@ -170,9 +170,9 @@
     "difficulty": "simple",
     "score": 1,
     "ves_reward": 0.75,
-    "time_ratio": 0.9452,
+    "time_ratio": 0.9943,
     "gold_sql": "SELECT DISTINCT T2.account_id FROM trans AS T1 INNER JOIN account AS T2 ON T1.account_id = T2.account_id WHERE TO_CHAR(CAST(T2.date AS TIMESTAMP), 'YYYY') < '1997' AND T1.amount > 3000",
-    "predicted_sql": "SELECT DISTINCT a.account_id \nFROM account a \nJOIN trans t ON a.account_id = t.account_id \nWHERE a.date::DATE < '1997-01-01' AND t.amount > 3000;",
+    "predicted_sql": "SELECT DISTINCT t1.account_id \nFROM account AS t1 \nJOIN trans AS t2 ON t1.account_id = t2.account_id \nWHERE t1.date::date < '1997-01-01' AND t2.amount > 3000;",
     "error": null
   },
   {
@@ -181,9 +181,9 @@
     "difficulty": "simple",
     "score": 1,
     "ves_reward": 0.75,
-    "time_ratio": 0.9494,
+    "time_ratio": 0.9752,
     "gold_sql": "SELECT COUNT(T1.card_id) FROM card AS T1 INNER JOIN disp AS T2 ON T1.disp_id = T2.disp_id WHERE T1.type = 'classic' AND T2.type = 'OWNER'",
-    "predicted_sql": "SELECT COUNT(DISTINCT c.card_id) AS classic_cards_eligible_for_loan\nFROM card c\nJOIN disp d ON c.disp_id = d.disp_id\nWHERE c.type LIKE '%classic%'\nAND d.type LIKE '%OWNER%';",
+    "predicted_sql": "SELECT COUNT(DISTINCT c.card_id) AS classic_cards_eligible_for_loan\nFROM card c\nJOIN disp d ON c.disp_id = d.disp_id\nJOIN account a ON d.account_id = a.account_id\nWHERE c.type LIKE '%classic%'\nAND d.type = 'OWNER';",
     "error": null
   },
   {
@@ -194,8 +194,8 @@
     "ves_reward": 0.0,
     "time_ratio": 0.0,
     "gold_sql": "SELECT T3.district_id FROM \"order\" AS T1 INNER JOIN account AS T2 ON T1.account_id = T2.account_id INNER JOIN district AS T3 ON T2.district_id = T3.district_id WHERE T1.order_id = 33333",
-    "predicted_sql": "error",
-    "error": "(psycopg.errors.SyntaxError) syntax error at or near \"error\"\nLINE 1: error\n        ^\n[SQL: error]\n(Background on this error at: https://sqlalche.me/e/20/f405)"
+    "predicted_sql": "SELECT DISTINCT T1.district_id \nFROM account AS T1 \nJOIN order AS T2 ON T1.account_id = T2.account_id \nWHERE T2.order_id = '33333'",
+    "error": "(psycopg.errors.SyntaxError) syntax error at or near \"order\"\nLINE 3: JOIN order AS T2 ON T1.account_id = T2.account_id \n             ^\n[SQL: SELECT DISTINCT T1.district_id \nFROM account AS T1 \nJOIN order AS T2 ON T1.account_id = T2.account_id \nWHERE T2.order_id = '33333']\n(Background on this error at: https://sqlalche.me/e/20/f405)"
   },
   {
     "question_id": "179",
@@ -249,8 +249,8 @@
     "ves_reward": 0.0,
     "time_ratio": 0.0,
     "gold_sql": "SELECT T3.type FROM client AS T1 INNER JOIN disp AS T2 ON T1.client_id = T2.client_id INNER JOIN card AS T3 ON T2.disp_id = T3.disp_id WHERE T1.client_id = 9",
-    "predicted_sql": "error",
-    "error": "(psycopg.errors.SyntaxError) syntax error at or near \"error\"\nLINE 1: error\n        ^\n[SQL: error]\n(Background on this error at: https://sqlalche.me/e/20/f405)"
+    "predicted_sql": "SELECT DISTINCT c.type \nFROM card c\nJOIN disp d ON c.disp_id = d.disp_id \nWHERE d.client_id = '9' \nAND c.type LIKE '%kredit%'",
+    "error": null
   },
   {
     "question_id": "94",
@@ -335,7 +335,7 @@
     "difficulty": "simple",
     "score": 1,
     "ves_reward": 0.75,
-    "time_ratio": 0.8882,
+    "time_ratio": 0.9983,
     "gold_sql": "SELECT T.atom_id FROM connected AS T WHERE T.bond_id = 'TR000_2_5'",
     "predicted_sql": "SELECT DISTINCT \"atom_id\" \nFROM \"connected\" \nWHERE \"bond_id\" = 'TR000_2_5'",
     "error": null
@@ -367,10 +367,10 @@
     "db_id": "toxicology",
     "difficulty": "simple",
     "score": 1,
-    "ves_reward": 1.0,
-    "time_ratio": 1.0025,
+    "ves_reward": 0.75,
+    "time_ratio": 0.9975,
     "gold_sql": "SELECT COUNT(DISTINCT T2.molecule_id) FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.element = 'na' AND T2.label = '-'",
-    "predicted_sql": "SELECT COUNT(DISTINCT T1.molecule_id) AS non_carcinogenic_sodium_count\nFROM molecule AS T1\nJOIN atom AS T2 ON T1.molecule_id = T2.molecule_id\nWHERE T2.element = 'na' AND T1.label LIKE '-';",
+    "predicted_sql": "SELECT COUNT(DISTINCT T1.molecule_id) AS non_carcinogenic_sodium_count\nFROM molecule AS T1\nJOIN atom AS T2 ON T1.molecule_id = T2.molecule_id\nWHERE T2.element = 'na' AND T1.label = '-';",
     "error": null
   },
   {
@@ -379,7 +379,7 @@
     "difficulty": "simple",
     "score": 1,
     "ves_reward": 0.75,
-    "time_ratio": 0.9592,
+    "time_ratio": 0.9992,
     "gold_sql": "SELECT COUNT(T1.atom_id) AS atomnums_h FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T2.label = '+' AND T1.element = 'h'",
     "predicted_sql": "SELECT COUNT(DISTINCT a.atom_id) AS num_atoms\nFROM atom a\nJOIN molecule m ON a.molecule_id = m.molecule_id\nWHERE a.element = 'h' AND m.label LIKE '%+%'",
     "error": null
@@ -389,8 +389,8 @@
     "db_id": "toxicology",
     "difficulty": "simple",
     "score": 1,
-    "ves_reward": 1.0,
-    "time_ratio": 1.0149,
+    "ves_reward": 0.75,
+    "time_ratio": 0.9624,
     "gold_sql": "SELECT COUNT(DISTINCT T1.molecule_id) FROM molecule AS T1 INNER JOIN bond AS T2 ON T1.molecule_id = T2.molecule_id WHERE T2.bond_type = '#' AND T1.label = '-'",
     "predicted_sql": "SELECT COUNT(DISTINCT m.molecule_id) AS non_carcinogenic_molecules_with_triple_bonds\nFROM molecule m\nJOIN bond b ON m.molecule_id = b.molecule_id\nWHERE b.bond_type LIKE '#'\nAND m.label LIKE '-';",
     "error": null
@@ -403,7 +403,7 @@
     "ves_reward": 0.0,
     "time_ratio": 0.0,
     "gold_sql": "SELECT label FROM molecule AS T WHERE T.molecule_id = 'TR000'",
-    "predicted_sql": "SELECT \n    CASE \n        WHEN label = '+' THEN 'Carcinogenic'\n        WHEN label = '-' THEN 'Non-carcinogenic'\n        ELSE 'Unknown'\n    END AS carcinogenicity_status\nFROM \n    molecule\nWHERE \n    molecule_id = 'TR000';",
+    "predicted_sql": "SELECT \n    CASE \n        WHEN label = '+' THEN 'Carcinogenic'\n        WHEN label = '-' THEN 'Non-carcinogenic'\n        ELSE 'Unknown'\n    END AS carcinogenicity_status\nFROM \n    molecule m\nWHERE \n    m.molecule_id = 'TR000';",
     "error": null
   },
   {
@@ -422,8 +422,8 @@
     "db_id": "toxicology",
     "difficulty": "simple",
     "score": 1,
-    "ves_reward": 1.0,
-    "time_ratio": 1.0099,
+    "ves_reward": 0.75,
+    "time_ratio": 0.998,
     "gold_sql": "SELECT T2.label FROM bond AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.bond_id = 'TR001_10_11'",
     "predicted_sql": "SELECT DISTINCT m.label \nFROM molecule m \nJOIN bond b ON m.molecule_id = b.molecule_id \nWHERE b.bond_id = 'TR001_10_11'",
     "error": null
@@ -434,7 +434,7 @@
     "difficulty": "simple",
     "score": 1,
     "ves_reward": 0.75,
-    "time_ratio": 0.9819,
+    "time_ratio": 0.9864,
     "gold_sql": "SELECT T2.atom_id, T2.atom_id2 FROM bond AS T1 INNER JOIN connected AS T2 ON T1.bond_id = T2.bond_id WHERE T1.bond_type = '#'",
     "predicted_sql": "SELECT DISTINCT c.atom_id AS first_atom, c.atom_id2 AS second_atom\nFROM connected c\nJOIN bond b ON c.bond_id = b.bond_id\nWHERE b.bond_type LIKE '#'",
     "error": null
@@ -455,8 +455,8 @@
     "db_id": "toxicology",
     "difficulty": "moderate",
     "score": 1,
-    "ves_reward": 0.75,
-    "time_ratio": 0.8766,
+    "ves_reward": 1.0,
+    "time_ratio": 1.0036,
     "gold_sql": "SELECT COUNT(T1.atom_id) FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id INNER JOIN bond AS T3 ON T2.molecule_id = T3.molecule_id WHERE T3.bond_type = '#' AND T1.element IN ('p', 'br')",
     "predicted_sql": "SELECT COUNT(DISTINCT \"atom\".atom_id) AS total_atoms\nFROM \"molecule\" \nJOIN \"bond\" ON \"molecule\".molecule_id = \"bond\".molecule_id\nJOIN \"connected\" ON \"bond\".bond_id = \"connected\".bond_id\nJOIN \"atom\" ON \"molecule\".molecule_id = \"atom\".molecule_id\nWHERE \"bond\".bond_type = '#' AND (\"atom\".element = 'p' OR \"atom\".element = 'br');",
     "error": null
@@ -489,7 +489,7 @@
     "difficulty": "moderate",
     "score": 1,
     "ves_reward": 0.75,
-    "time_ratio": 0.9763,
+    "time_ratio": 0.9951,
     "gold_sql": "SELECT T2.label AS flag_carcinogenic FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.element = 'ca'",
     "predicted_sql": "SELECT DISTINCT m.label \nFROM molecule m \nJOIN atom a ON m.molecule_id = a.molecule_id \nWHERE a.element LIKE '%ca%' \nAND m.label IN ('+', '-')",
     "error": null
@@ -511,7 +511,7 @@
     "difficulty": "moderate",
     "score": 1,
     "ves_reward": 1.0,
-    "time_ratio": 1.0096,
+    "time_ratio": 1.0132,
     "gold_sql": "SELECT T1.bond_type FROM bond AS T1 INNER JOIN connected AS T2 ON T1.bond_id = T2.bond_id WHERE T2.atom_id = 'TR004_8' AND T2.atom_id2 = 'TR004_20' OR T2.atom_id2 = 'TR004_8' AND T2.atom_id = 'TR004_20'",
     "predicted_sql": "SELECT DISTINCT b.bond_type \nFROM bond AS b\nJOIN connected AS c ON b.bond_id = c.bond_id\nWHERE (c.atom_id = 'TR004_8' AND c.atom_id2 = 'TR004_20') OR (c.atom_id = 'TR004_20' AND c.atom_id2 = 'TR004_8');",
     "error": null
@@ -521,8 +521,8 @@
     "db_id": "toxicology",
     "difficulty": "moderate",
     "score": 1,
-    "ves_reward": 1.0,
-    "time_ratio": 1.0198,
+    "ves_reward": 0.75,
+    "time_ratio": 0.989,
     "gold_sql": "SELECT T1.bond_type FROM bond AS T1 INNER JOIN connected AS T2 ON T1.bond_id = T2.bond_id WHERE T2.atom_id = 'TR000_1' AND T2.atom_id2 = 'TR000_2'",
     "predicted_sql": "SELECT DISTINCT b.bond_type AS bond_type\nFROM bond b\nJOIN connected c ON b.bond_id = c.bond_id\nWHERE c.atom_id = 'TR000_1' AND c.atom_id2 = 'TR000_2'",
     "error": null
@@ -557,7 +557,7 @@
     "ves_reward": 0.0,
     "time_ratio": 0.0,
     "gold_sql": "SELECT T2.molecule_id, T2.bond_type FROM molecule AS T1 INNER JOIN bond AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.molecule_id BETWEEN 'TR000' AND 'TR050'",
-    "predicted_sql": "SELECT DISTINCT b.bond_type \nFROM bond AS b \nWHERE b.molecule_id BETWEEN 'TR000' AND 'TR050'",
+    "predicted_sql": "SELECT DISTINCT b.bond_type \nFROM bond AS b \nWHERE b.molecule_id BETWEEN 'TR000' AND 'TR050' \n\nOR b.bond_type LIKE '='\n\nOR b.bond_type LIKE '-'\n\nOR b.bond_type LIKE '#';",
     "error": null
   },
   {
@@ -687,7 +687,7 @@
     "difficulty": "challenging",
     "score": 1,
     "ves_reward": 0.75,
-    "time_ratio": 0.9781,
+    "time_ratio": 0.993,
     "gold_sql": "SELECT DISTINCT T1.element, T2.label FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T2.molecule_id = 'TR060'",
     "predicted_sql": "SELECT DISTINCT a.element, m.label \nFROM atom a \nJOIN molecule m ON a.molecule_id = m.molecule_id \nWHERE m.molecule_id = 'TR060'",
     "error": null
@@ -729,12 +729,12 @@
     "question_id": "549",
     "db_id": "codebase_community",
     "difficulty": "simple",
-    "score": 0,
-    "ves_reward": 0.0,
-    "time_ratio": 0.0,
+    "score": 1,
+    "ves_reward": 1.0,
+    "time_ratio": 1.008,
     "gold_sql": "SELECT T2.Body FROM tags AS T1 INNER JOIN posts AS T2 ON T2.Id = T1.ExcerptPostId WHERE T1.TagName = 'bayesian'",
-    "predicted_sql": "SELECT DISTINCT p.id, p.body\nFROM posts p\nJOIN tags t ON p.excerptpostid = t.id\nWHERE t.tagname LIKE 'bayesian';",
-    "error": "(psycopg.errors.UndefinedColumn) column p.excerptpostid does not exist\nLINE 3: JOIN tags t ON p.excerptpostid = t.id\n                       ^\nHINT:  Perhaps you meant to reference the column \"t.excerptpostid\".\n[SQL: SELECT DISTINCT p.id, p.body\nFROM posts p\nJOIN tags t ON p.excerptpostid = t.id\nWHERE t.tagname LIKE 'bayesian';]\n(Background on this error at: https://sqlalche.me/e/20/f405)"
+    "predicted_sql": "SELECT DISTINCT p.body \nFROM posts p \nJOIN tags t ON p.id = t.excerptpostid \nWHERE t.tagname LIKE 'bayesian';",
+    "error": null
   },
   {
     "question_id": "661",
@@ -742,7 +742,7 @@
     "difficulty": "simple",
     "score": 1,
     "ves_reward": 0.75,
-    "time_ratio": 0.9171,
+    "time_ratio": 0.9608,
     "gold_sql": "SELECT Age FROM users WHERE Reputation = (SELECT MAX(Reputation) FROM users)",
     "predicted_sql": "SELECT age \nFROM users \nORDER BY reputation DESC \nLIMIT 1;",
     "error": null
@@ -752,8 +752,8 @@
     "db_id": "codebase_community",
     "difficulty": "simple",
     "score": 1,
-    "ves_reward": 0.75,
-    "time_ratio": 0.993,
+    "ves_reward": 1.0,
+    "time_ratio": 1.006,
     "gold_sql": "SELECT COUNT(Id) FROM votes WHERE UserId = 58 AND CreationDate = '2010-07-19'",
     "predicted_sql": "SELECT COUNT(*) \nFROM votes v\nWHERE v.userid = 58 AND v.creationdate::date = '2010-07-19';",
     "error": null
@@ -764,7 +764,7 @@
     "difficulty": "simple",
     "score": 1,
     "ves_reward": 0.75,
-    "time_ratio": 0.839,
+    "time_ratio": 0.9502,
     "gold_sql": "SELECT T1.Reputation FROM users AS T1 INNER JOIN badges AS T2 ON T1.Id = T2.UserId WHERE T2.Date = '2010-07-19 19:39:08.0'",
     "predicted_sql": "SELECT DISTINCT u.reputation\nFROM users u\nJOIN badges b ON u.id = b.userid\nWHERE b.date::timestamp = '2010-07-19 19:39:08.0'::timestamp;",
     "error": null
@@ -775,7 +775,7 @@
     "difficulty": "simple",
     "score": 1,
     "ves_reward": 1.0,
-    "time_ratio": 1.4379,
+    "time_ratio": 1.3875,
     "gold_sql": "SELECT T2.Name FROM users AS T1 INNER JOIN badges AS T2 ON T1.Id = T2.UserId WHERE T1.Reputation = (SELECT MIN(Reputation) FROM users)",
     "predicted_sql": "SELECT DISTINCT b.name \nFROM badges b\nJOIN users u ON b.userid = u.id\nWHERE u.reputation = (SELECT MIN(reputation) FROM users);",
     "error": null
@@ -786,7 +786,7 @@
     "difficulty": "simple",
     "score": 1,
     "ves_reward": 0.75,
-    "time_ratio": 0.9952,
+    "time_ratio": 0.9805,
     "gold_sql": "SELECT COUNT(Id) FROM comments WHERE UserId = 13",
     "predicted_sql": "SELECT COUNT(*) AS total_comments\nFROM comments\nWHERE userid = 13;",
     "error": null
@@ -810,7 +810,7 @@
     "ves_reward": 0.0,
     "time_ratio": 0.0,
     "gold_sql": "SELECT COUNT(T1.Id) FROM users AS T1 INNER JOIN postHistory AS T2 ON T1.Id = T2.UserId WHERE T1.DisplayName = 'Daniel Vassallo'",
-    "predicted_sql": "SELECT COUNT(DISTINCT p.id) AS post_count\nFROM posts p\nJOIN users u ON p.owneruserid = u.id\nWHERE u.displayname LIKE 'Daniel Vassallo';",
+    "predicted_sql": "SELECT COUNT(DISTINCT p.id) AS post_count\nFROM posts p\nJOIN users u ON p.owneruserid = u.id\nWHERE u.displayname LIKE '%Daniel Vassallo%';",
     "error": null
   },
   {
@@ -953,7 +953,7 @@
     "ves_reward": 0.0,
     "time_ratio": 0.0,
     "gold_sql": "SELECT T3.DisplayName, T1.Title FROM posts AS T1 INNER JOIN votes AS T2 ON T1.Id = T2.PostId INNER JOIN users AS T3 ON T3.Id = T2.UserId WHERE T2.BountyAmount = 50 AND T1.Title LIKE '%variance%'",
-    "predicted_sql": "SELECT DISTINCT u.DisplayName AS UserDisplayName\nFROM users u\nJOIN votes v ON u.id = v.userid\nJOIN posts p ON v.postid = p.id\nWHERE v.BountyAmount = 50\nAND p.Title LIKE '%variance%'",
+    "predicted_sql": "SELECT DISTINCT u.DisplayName AS \"User\"\nFROM users u\nJOIN votes v ON u.id = v.userid\nJOIN posts p ON v.postid = p.id\nWHERE v.BountyAmount = 50\nAND p.Title ILIKE '%variance%'",
     "error": null
   },
   {
