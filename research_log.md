@@ -708,3 +708,77 @@ token accounting.
    диапазона и стабильности по question ID;
 4. отдельная интерпретация VES как метрики с временным шумом удалённой БД.
 
+#### Профиль размеров схем BIRD для проверки scale-гипотезы
+
+- **Дата:** 17.08.2026.
+- **Цель:** до новых EX/VES-прогонов определить размер схем всех доступных БД
+  и зафиксировать независимый confirmation-набор для гипотезы о том, что
+  LightRAG становится полезнее при росте полного schema-контекста.
+- **Датасет:** `data/bird_large.json`, 241 вопрос, 8 БД.
+- **Инструмент:** `scripts/profile_bird_schemas.py`.
+- **Режим:** только PostgreSQL metadata reflection; чтение строк таблиц и LLM
+  не используются. Для соединения принудительно установлен и проверен
+  `transaction_read_only = on`.
+- **Размер схемы:** точная baseline-сериализация `TABLE` / `column (TYPE)` и
+  `len(cl100k_base.encode(schema))`. Название метрики совпадает с baseline и
+  LightRAG: `context_tokens_cl100k_per_query`.
+
+##### Результат профилирования
+
+| БД | Вопросов | Таблиц | Колонок | FK constraints | Крупнейшая FK-компонента, таблиц | Full schema, cl100k |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `card_games` | 31 | 6 | 115 | 2 | 2 | **891** |
+| `california_schools` | 24 | 3 | 89 | 1 | 2 | **762** |
+| `codebase_community` | 27 | 8 | 71 | 7 | 6 | **568** |
+| `financial` | 29 | 8 | 55 | 8 | 8 | **418** |
+| `student_club` | 33 | 8 | 48 | 8 | 8 | **351** |
+| `superhero` | 36 | 10 | 31 | 11 | 10 | **264** |
+| `debit_card_specializing` | 26 | 5 | 21 | 0 | 1 | **169** |
+| `toxicology` | 35 | 4 | 11 | 3 | 3 | **88** |
+
+Все 8 подключений подтвердили read-only режим и завершились без ошибок.
+Контрольные значения для `toxicology`, `financial` и `codebase_community`
+совпали с ранее сохранёнными baseline-схемами: 88, 418 и 568 токенов. Полный
+профиль с SHA-256 каждой строки схемы сохранён в игнорируемом Git артефакте
+`artifacts/schema_profiles/bird_large_schema_profile.csv`.
+
+##### Операционное определение размера и наборы данных
+
+Для этого эксперимента размер БД означает размер полной схемы в baseline
+prompt, а не число строк, таблиц или benchmark-вопросов. По рангу восьми схем
+зафиксированы три группы:
+
+- small: `toxicology`, `debit_card_specializing`, `superhero`;
+- medium: `student_club`, `financial`, `codebase_community`;
+- large: `california_schools`, `card_games`.
+
+`toxicology`, `financial` и `codebase_community` являются
+exploratory/calibration-набором: scale-гипотеза была сформулирована после
+анализа их результатов. Независимый confirmation-набор состоит из пяти ранее
+не оценённых БД: `debit_card_specializing`, `superhero`, `student_club`,
+`california_schools` и `card_games` — всего 150 вопросов.
+
+##### Интерпретация и план проверки
+
+Ранг schema-only токенов полностью совпал с рангом числа колонок, но не числа
+таблиц. Например, `california_schools` содержит только 3 таблицы, но её схема
+занимает 762 токена; `superhero` содержит 10 таблиц, но только 264 токена.
+Следовательно, отбор только по числу таблиц был бы некорректен.
+
+Две самые большие по prompt схемы, `card_games` и `california_schools`, имеют
+слабосвязный FK-граф. `superhero` и `student_club`, наоборот, меньше по
+schema-only токенам, но имеют связные FK-графы. Поэтому в дальнейшем следует
+различать две гипотезы:
+
+1. LightRAG экономит контекст на широких схемах, выбирая релевантные колонки.
+2. LightRAG помогает на структурно сложных схемах, используя связи таблиц.
+
+Для confirmation-прогона необходимо использовать одинаковые question ID,
+target-модель, evidence, prompts и evaluation logic в baseline и Compact
+LightRAG; сохранить retrieval-контексты для replay; оставить `ambiguous` и
+`error` в знаменателе; отдельно сравнить EX, VES, schema-only, target и
+end-to-end prompt-токены. Рекомендуемый полный вариант — все пять новых БД.
+Если потребуется сократить стоимость, заранее фиксируется набор из малого
+контроля `debit_card_specializing`, медианной `student_club` и обеих large-БД
+`california_schools` и `card_games` — 114 вопросов.
+
