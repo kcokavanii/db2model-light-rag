@@ -17,6 +17,7 @@ manual_check.json
 # Artifacts
 artifacts/
 docs/
+outputs/
 
 connect2DB.txt
 AGENTS.md
