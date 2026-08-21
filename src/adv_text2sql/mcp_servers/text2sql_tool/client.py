@@ -11,7 +11,7 @@ from autogen_ext.tools.mcp import StreamableHttpServerParams, mcp_server_tools
 from dotenv import load_dotenv
 from typing import Any
 
-load_dotenv()
+load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,5 @@
-db_id,EX_percent,VES_percent,prompt_tokens_per_query,total_queries
-codebase_community,18.52,14.81,2307,27
-financial,20.69,18.10,2307,29
-toxicology,31.43,27.14,2307,35
-OVERALL,24.18,20.60,2307,91
+db_id,EX_percent,VES_percent,target_prompt_tokens_total,target_prompt_tokens_per_query,context_tokens_cl100k_per_query,total_queries
+codebase_community,22.22,19.44,59529,2205,568,27
+financial,13.79,11.21,77630,2677,418,29
+toxicology,31.43,25.00,62707,1792,88,35
+OVERALL,23.08,18.96,199866,2196,336,91

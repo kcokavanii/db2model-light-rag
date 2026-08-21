@@ -63,13 +63,19 @@ def generate_xiyan_m_schema(db_data: Dict[str, Any], db_name: str) -> str:
             pk_marker = ", Primary Key" if is_pk else ""
             
             stats = col_stats.get(col_name, {})
-            examples = stats.get("most_common_vals", [])
+            examples = stats.get("most_common_vals", [])[:5] 
+
+            n_distinct_frac = stats.get("n_distinct_fraction")
+            n_distinct_abs = stats.get("n_distinct_absolute")
+            cardinality_hint = ""
+            if n_distinct_frac is not None and n_distinct_frac <= 0.05 and n_distinct_abs is not None:
+                cardinality_hint = f", n_distinct: {n_distinct_abs}"
             
             if examples:
                 examples_str = ", ".join(format_value(v) for v in examples)
-                col_lines.append(f"  ({col_name}:{col_type}{pk_marker}, Examples: [{examples_str}])")
+                col_lines.append(f"  ({col_name}:{col_type}{pk_marker}{cardinality_hint}, Examples: [{examples_str}])")
             else:
-                col_lines.append(f"  ({col_name}:{col_type}{pk_marker})")
+                col_lines.append(f"  ({col_name}:{col_type}{pk_marker}{cardinality_hint})")
         
         lines.append(",\n".join(col_lines))
         lines.append("]\n")
@@ -106,8 +112,30 @@ def build_semantic_prompt(table: Dict[str, Any]) -> str:
         pk_text = " (Primary Key)" if is_pk else ""
         
         stats = col_stats.get(col_name, {})
-        examples = stats.get("most_common_vals", [])        
+        examples = stats.get("most_common_vals", [])[:5]        
         parts = [f"  - {col_name}{pk_text} (тип: {col_type}, nullable: {nullable})"]
+
+        n_distinct_frac = stats.get("n_distinct_fraction")
+        if n_distinct_frac is not None:
+            if n_distinct_frac <= 0.05:
+                parts.append("справочное значение (низкая кардинальность, строгий набор вариантов)")
+            elif n_distinct_frac >= 0.9:
+                parts.append("высокая кардинальность (почти уникальные значения)")
+        
+        null_frac = stats.get("null_frac", 0)
+        if null_frac and null_frac > 0.1:
+            parts.append(f"доля NULL: {null_frac:.1%}")
+
+        col_type_lower = col_type.lower()
+        if ("date" in col_type_lower or "time" in col_type_lower) and stats.get("histogram_bounds"):
+            bounds = stats["histogram_bounds"]
+            if isinstance(bounds, str) and bounds.startswith("{") and bounds.endswith("}"):
+                inner = bounds.strip("{}")
+                if inner:
+                    bounds_list = inner.split(',')
+                    if len(bounds_list) >= 2:
+                        parts.append(f"диапазон значений: примерно от {bounds_list[0]} до {bounds_list[-1]}")
+
         if examples:
             parts.append(f"примеры: {examples}")
         

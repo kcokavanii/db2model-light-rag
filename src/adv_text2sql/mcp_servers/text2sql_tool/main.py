@@ -12,7 +12,7 @@ from .src.text2sql_implementation import Text2SQLGenerator
 from tabulate import tabulate
 # from unilog import setup_logging
 
-load_dotenv()
+load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 

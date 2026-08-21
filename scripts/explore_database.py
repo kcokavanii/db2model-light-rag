@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 import json
 from typing import Dict, List, Any
 import os
+import io
+import csv
 
 
 load_dotenv(override=True)
@@ -76,7 +78,7 @@ class DatabaseExplorer:
         ]
     
     def get_primary_keys(self, table_name: str) -> List[str]:
-        """Получить первичные ключи через pg_catalog (более надёжно)"""
+        """Получить первичные ключи через pg_catalog"""
         query = """
         SELECT a.attname
         FROM pg_index i
@@ -143,6 +145,12 @@ class DatabaseExplorer:
     
     def get_statistics(self, table_name: str, column_name: str) -> Dict[str, Any]:
         """Получить статистики из pg_stats"""
+
+        self.cursor.execute(f"""
+            SELECT COUNT(*) FROM "{table_name}"
+        """)
+        total_rows = self.cursor.fetchone()[0]
+
         query = """
         SELECT
             n_distinct,
@@ -160,18 +168,50 @@ class DatabaseExplorer:
         row = self.cursor.fetchone()
         if not row:
             return {}
-        
-        most_common_3 = []
-        if row[3]: 
-            vals = row[3].strip('{}').split(',')
-            most_common_3 = [v for v in vals[:3] if v]
+
+        n_distinct_raw = row[0]
+        # Normalize n_distinct (0.0 - 1.0)
+        if n_distinct_raw < 0:
+            # Negative = proportion of total_rows
+            n_distinct_fraction = abs(n_distinct_raw)
+            n_distinct_absolute = int(n_distinct_fraction * total_rows)
+        else:
+            # Positive = absolute value
+            n_distinct_absolute = n_distinct_raw
+            n_distinct_fraction = n_distinct_raw / total_rows if total_rows > 0 else 0
+
+        most_common_vals = []
+        if row[3]:
+            inner = row[3].strip('{}')
+            if inner:
+                reader = csv.reader(io.StringIO(inner))
+                for parsed_row in reader:
+                    vals = parsed_row
+                    break
+            else:
+                vals = []
+            vals = [v for v in vals if v is not None]
+            
+            if n_distinct_fraction <= 0.05:  
+                most_common_vals = vals  
+            elif n_distinct_fraction <= 0.20:
+                most_common_vals = vals[:20]
+            else:
+                most_common_vals = vals[:10]
+            
+        most_common_freqs = []
+        if row[4] and most_common_vals:
+            most_common_freqs = row[4][:len(most_common_vals)]
         
         return {
-            'n_distinct': row[0],
+            'n_distinct': n_distinct_raw, 
+            'n_distinct_fraction': n_distinct_fraction,
+            'n_distinct_absolute': n_distinct_absolute,
+            'total_rows': total_rows, 
             'null_frac': row[1],
             'avg_width': row[2],
-            'most_common_vals': most_common_3,
-            'most_common_freqs': row[4],
+            'most_common_vals': most_common_vals,
+            'most_common_freqs': most_common_freqs,
             'histogram_bounds': row[5]
         }
     
