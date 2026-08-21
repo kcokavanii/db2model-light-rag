@@ -502,18 +502,6 @@ split.
   `max_entity_tokens = 4000`, `max_relation_tokens = 5000`,
   `max_total_tokens = 12000`, reranking отключён.
 
-##### Артефакты и целостность
-
-- `artifacts/benchmarks/lightrag/toxicology/20260816_152000`;
-- `artifacts/benchmarks/lightrag/financial/20260814_145358`;
-- `artifacts/benchmarks/lightrag/codebase_community/20260816_154114`.
-
-Во всех трёх запусках присутствует полный ожидаемый split. Question ID в
-`bird_selected.json`, `contexts.json`, `query_results.json` и
-`manual_check.json` совпадают с датасетом; пропусков и дубликатов нет. EX и VES
-пересчитаны из `manual_check.json` и совпадают с итоговыми CSV. Все 91 контекста
-соответствуют новому формату, пустых контекстов и фрагментов прежнего semantic
-формата нет.
 
 ##### Качество
 
