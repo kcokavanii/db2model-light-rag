@@ -773,12 +773,138 @@ schema-only токенам, но имеют связные FK-графы. Поэ
 1. LightRAG экономит контекст на широких схемах, выбирая релевантные колонки.
 2. LightRAG помогает на структурно сложных схемах, используя связи таблиц.
 
-Для confirmation-прогона необходимо использовать одинаковые question ID,
-target-модель, evidence, prompts и evaluation logic в baseline и Compact
-LightRAG; сохранить retrieval-контексты для replay; оставить `ambiguous` и
-`error` в знаменателе; отдельно сравнить EX, VES, schema-only, target и
-end-to-end prompt-токены. Рекомендуемый полный вариант — все пять новых БД.
-Если потребуется сократить стоимость, заранее фиксируется набор из малого
-контроля `debit_card_specializing`, медианной `student_club` и обеих large-БД
-`california_schools` и `card_games` — 114 вопросов.
+
+#### Confirmation-прогоны на двух самых больших схемах BIRD
+
+- **Даты прогонов:** baseline — 17.08.2026, Compact LightRAG — 19.08.2026.
+- **Дата проверки и интерпретации:** 21.08.2026.
+- **Гипотеза:** на широких схемах query-specific Compact LightRAG должен
+  сильнее сокращать schema-context и полный prompt budget относительно
+  baseline; отдельно проверяется, сохраняется ли при этом качество SQL.
+- **Датасет:** `data/bird_large.json`, 55 вопросов:
+  `card_games` — 31, `california_schools` — 24.
+- **Baseline:** полная схема конкретной БД в формате `TABLE` /
+  `column (TYPE)`, evidence включён.
+- **Compact LightRAG:** commit
+  `977b0dbfdd31152bb43fd7082909fa40a91439d5`, `git_dirty=true`;
+  target и retrieval — `Qwen/Qwen2.5-Coder-7B-Instruct`, embedding —
+  `BAAI/bge-m3`, evidence включён; hybrid retrieval, `top_k = 15`,
+  `chunk_top_k = 8`, reranking отключён, keyword cache — холодная локальная
+  копия. Формат `baseline_retrieved_entities`, version 1, включает только
+  найденные таблицы, колонки и SQL-типы.
+
+Baseline-артефакты не содержат self-contained `run_config.json`, поэтому
+фактически использованную модель нельзя независимо подтвердить только по
+артефакту. LightRAG-конфигурация сохранена полностью; оба его запуска сделаны
+из одного commit и с одинаковыми параметрами.
+
+##### Артефакты и целостность
+
+- baseline `card_games`:
+  `artifacts/benchmarks/baseline/card_games/run_1`;
+- Compact `card_games`:
+  `artifacts/benchmarks/lightrag/card_games/20260819_121623`;
+- baseline `california_schools`:
+  `artifacts/benchmarks/baseline/california_schools/run_1`;
+- Compact `california_schools`:
+  `artifacts/benchmarks/lightrag/california_schools/20260819_124319`.
+
+Для каждой БД baseline и Compact содержат полный ожидаемый split. Наборы и
+порядок question ID совпадают с `data/bird_large.json`; пропусков и дубликатов
+нет. Одновопросный smoke-run `card_games/20260819_121322` в результаты не
+включён. Неуспешные и `ambiguous` примеры остались в знаменателе и получили
+нулевой score.
+
+##### Качество
+
+| БД | N | Baseline EX / VES | Compact EX / VES | Δ Compact − Baseline, п.п. |
+| :--- | ---: | ---: | ---: | ---: |
+| `card_games` | 31 | 9.68 / 7.26 | 3.23 / 2.42 | −6.45 / −4.84 |
+| `california_schools` | 24 | 0.00 / 0.00 | 4.17 / 3.12 | +4.17 / +3.12 |
+| **Overall, взвешенно** | **55** | **5.45 / 4.09** | **3.64 / 2.73** | **−1.82 / −1.36** |
+
+На `card_games` baseline решил 3/31 вопроса (`355`, `450`, `345`), Compact —
+1/31 (`355`): новых правильных ответов LightRAG не дал. На
+`california_schools` baseline не решил ни одного вопроса, Compact получил EX
+на одном вопросе (`73`). Этот единичный успех семантически сомнителен: gold и
+prediction выбирают разные meal-count показатели и используют разные фильтры,
+но случайно возвращают одинаковое значение `5.0`.
+
+Статусы генерации также показывают рост ложных отказов:
+
+| БД | Baseline success / ambiguous / error | Compact success / ambiguous / error |
+| :--- | ---: | ---: |
+| `card_games` | 28 / 2 / 1 | 17 / 12 / 2 |
+| `california_schools` | 23 / 0 / 1 | 12 / 12 / 0 |
+| **Всего** | **51 / 2 / 2** | **29 / 24 / 2** |
+
+Все BIRD-вопросы имеют gold SQL, поэтому 24 Compact-ответа `ambiguous` —
+ложные отказы. На `card_games` два baseline-only успеха согласуются с
+неполным retrieval: для вопроса `450` отсутствовал `cards.artist`, а для
+`345` — join keys `cards.uuid`, `legalities.uuid` и колонка
+`legalities.status`.
+
+##### Token budget на вопрос
+
+| БД | Full schema, cl100k | Compact schema, cl100k | Baseline prompt | Compact target | Retrieval | Compact end-to-end | Δ end-to-end |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `card_games` | 891.00 | 93.87 | 3 358.32 | 1 583.71 | 706.03 | 2 289.74 | −31.82% |
+| `california_schools` | 762.00 | 125.29 | 3 309.29 | 1 203.88 | 702.63 | 1 906.50 | −42.39% |
+| **Overall, взвешенно** | **834.71** | **107.58** | **3 336.93** | **1 417.96** | **704.55** | **2 122.51** | **−36.39%** |
+
+На двух больших схемах Compact уменьшил schema-only контекст на 87.11%,
+target prompt — на 57.51%, а полный online prompt с учётом retrieval — на
+36.39%. В абсолютных суммах для 55 вопросов baseline использовал 183 531
+prompt-токен, Compact — 77 988 target + 38 750 retrieval = 116 738.
+
+##### Ограничения
+
+1. Метрики EX/VES рассчитаны сохранённой legacy-версией evaluator. Известный
+   regex после SQLGlot может портить отдельные gold SQL с делением, `NULLIF`
+   и `/` внутри quoted identifiers. Он потенциально затрагивает пять вопросов
+   `card_games` и четыре `california_schools`; фактический путь зависит от
+   того, был ли prediction помечен `ambiguous`. Поэтому EX/VES являются
+   предварительными, тогда как token-метрики и целостность split не зависят от
+   этой ошибки.
+2. В обоих LightRAG `run_config.json` сохранено `git_dirty=true`. Известные
+   незакоммиченные изменения относились к MCP entrypoints, а benchmark-файлы
+   не менялись, но полный dirty diff в артефактах не сохранён.
+3. Semantic V3 на `card_games` и `california_schools` не запускался. Поэтому
+   эти прогоны сравнивают только baseline и Compact и не позволяют утверждать,
+   что V3 сохранил бы качество на больших схемах.
+4. `card_games` и `california_schools` — широкие, но слабосвязные схемы: у них
+   соответственно 2 и 1 FK constraint. Результат проверяет прежде всего
+   сокращение широкого schema prompt, а не преимущество графового обхода на
+   сложной FK-топологии.
+5. Рост числа `ambiguous` уменьшает число SQL-generation вызовов. Поэтому
+   снижение target и end-to-end prompt отражает фактическую стоимость
+   наблюдаемого pipeline, но не является чистой абляцией только формата
+   контекста; чистой метрикой размера представления остаётся schema-only
+   `cl100k`.
+6. VES зависит от времени выполнения на удалённой PostgreSQL, поэтому небольшие
+   изменения следует считать временным шумом.
+
+##### Интерпретация и решение
+
+Confirmation-прогон убедительно подтвердил гипотезу об экономии контекста:
+на двух самых больших схемах Compact сократил schema-only budget примерно в
+7.8 раза и end-to-end prompt на 36.39%. Гипотеза о сохранении или улучшении
+качества не подтвердилась: взвешенный EX снизился с 5.45% до 3.64%, а
+единственный Compact-only успех на `california_schools` похож на случайную
+эквивалентность результата.
+
+Размер схемы сам по себе недостаточен для выбора метода: Compact хуже baseline
+на более крупной `card_games`, но формально лучше на `california_schools`.
+Главная наблюдаемая проблема Compact — потеря необходимых колонок, join keys и
+значений вместе с ростом ложных `ambiguous`. Перспективный следующий формат —
+структурный промежуточный контекст: найденные таблицы, колонки и типы плюс
+PK/FK-пути и релевантные literal values, но без длинных семантических описаний.
+Это гипотеза для дальнейшей абляции, а не уже измеренный результат.
+
+Для MCP целесообразно сначала реализовать явный конфигурируемый режим
+`baseline | compact | semantic_v3`, а автоматическую маршрутизацию обозначить
+как дальнейшее развитие. На текущих данных осторожное правило — использовать
+baseline для очень маленьких полных схем, V3 для quality-first режима и
+Compact только как economy-режим на больших схемах с возможностью fallback
+при `ambiguous` или ошибке генерации.
 
