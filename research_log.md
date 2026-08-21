@@ -798,22 +798,6 @@ Baseline-артефакты не содержат self-contained `run_config.jso
 артефакту. LightRAG-конфигурация сохранена полностью; оба его запуска сделаны
 из одного commit и с одинаковыми параметрами.
 
-##### Артефакты и целостность
-
-- baseline `card_games`:
-  `artifacts/benchmarks/baseline/card_games/run_1`;
-- Compact `card_games`:
-  `artifacts/benchmarks/lightrag/card_games/20260819_121623`;
-- baseline `california_schools`:
-  `artifacts/benchmarks/baseline/california_schools/run_1`;
-- Compact `california_schools`:
-  `artifacts/benchmarks/lightrag/california_schools/20260819_124319`.
-
-Для каждой БД baseline и Compact содержат полный ожидаемый split. Наборы и
-порядок question ID совпадают с `data/bird_large.json`; пропусков и дубликатов
-нет. Одновопросный smoke-run `card_games/20260819_121322` в результаты не
-включён. Неуспешные и `ambiguous` примеры остались в знаменателе и получили
-нулевой score.
 
 ##### Качество
 
