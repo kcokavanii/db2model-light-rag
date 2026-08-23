@@ -5,7 +5,6 @@ from textwrap import dedent
 from typing import Any
 
 from autogen_core.models import SystemMessage, UserMessage
-from autogen_ext.models.openai import OpenAIChatCompletionClient
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine, Result
 from sqlglot import Dialects, exp, parse_one
@@ -27,7 +26,14 @@ logger = logging.getLogger("text2sql_tool")
 
 
 class Text2SQLGenerator:
-    def __init__(self, db_uri: str, llm_client: OpenAIChatCompletionClient):
+    def __init__(
+        self,
+        db_uri: str,
+        llm_client: Any,
+        *,
+        system_prompt_template: str = SYSTEM_PROMPT_TEMPLATE,
+        sql_prompt_template: str = SQL_PROMPT_TEMPLATE,
+    ):
         """
         Initializes the Text2SQL generator with a database URI.
 
@@ -42,12 +48,20 @@ class Text2SQLGenerator:
         )
 
         self.llm_client = llm_client
+        self.system_prompt_template = system_prompt_template
+        self.sql_prompt_template = sql_prompt_template
 
         logger.info("Initialized Text2SQLGenerator")
 
     def build(self):
-        self.db_schema = self._get_db_schema_light()
+        self.set_schema_context(self._get_db_schema_light())
         # self.db_schema = self._get_db_schema_heavy()
+
+    def set_schema_context(self, db_schema: str) -> None:
+        """Replace the prompt schema as one atomic application-level step."""
+        if not db_schema.strip():
+            raise ValueError("db_schema must not be empty")
+        self.db_schema = db_schema
         self.system_prompt = self._create_system_prompt()
 
     def _update_db_schema(self, db_uri):
@@ -183,7 +197,7 @@ class Text2SQLGenerator:
 
     def _create_system_prompt(self) -> str:
         """Создает системный промпт с описанием схемы БД"""
-        return SYSTEM_PROMPT_TEMPLATE.format(
+        return self.system_prompt_template.format(
             db_schema=self.db_schema, sql_dialect="PostgreSQL"
         )
 
@@ -227,7 +241,7 @@ class Text2SQLGenerator:
                     "clarification_needed": response_text,
                 }
 
-        except Exception as e:
+        except Exception:
             logger.exception(f"Failed to check ambiguity for query: {user_query}")
             return {"status": "error"}
 
@@ -332,7 +346,7 @@ class Text2SQLGenerator:
         Returns:
             Dict[str, Any]: Результат в формате Model Context Protocol
         """
-        sql_prompt = SQL_PROMPT_TEMPLATE.format(
+        sql_prompt = self.sql_prompt_template.format(
             user_query=user_query, sql_dialect="PostgreSQL"
         )
         try:
@@ -454,14 +468,18 @@ class Text2SQLGenerator:
     async def query(
         self,
         user_query: str,
+        *,
+        max_retries: int | None = None,
     ) -> dict[str, Any]:
         """
-        Полный цикл: генерация SQL + выполнение
+        Проверка неоднозначности и генерация SQL без выполнения запроса.
+
         Args:
             user_query (str): Запрос на естественном языке
-            check_sql_query (bool): Флаг, требуется ли проверять SQL-запрос на корректность
+            max_retries (int | None): Максимум попыток генерации внутри режима.
+
         Returns:
-            Dict[str, Any]: Объединенные результаты генерации и выполнения
+            Dict[str, Any]: Статус и сгенерированный SQL-запрос.
         """
 
         # Ambiguity checking
@@ -470,7 +488,11 @@ class Text2SQLGenerator:
 
         if ambiguity_check["status"] == "success" and ambiguity_check["ambiguous"]:
             logger.info(f"Запрос неоднозначен. Требуется уточнение по причине: {ambiguity_check['clarification_needed']}")
-            return {"status": "ambiguous", "query": "ambiguous"}
+            return {
+                "status": "ambiguous",
+                "query": "ambiguous",
+                "clarification_needed": ambiguity_check["clarification_needed"],
+            }
 
         if ambiguity_check["status"] == "error":
             logger.info("Произошла ошибка при проверка неоднозначности.")
@@ -478,14 +500,18 @@ class Text2SQLGenerator:
 
 
         # Main query generation
+        retry_limit = MAX_RETRIES if max_retries is None else max_retries
+        if retry_limit <= 0:
+            raise ValueError("max_retries must be positive")
+
         retries = 0
         success = False
         raw_sql = ""
         final_result = {"status": "error", "query": "error"}
 
-        while not success and retries < MAX_RETRIES:
+        while not success and retries < retry_limit:
             logger.info(
-                f"Попытка {retries + 1}/{MAX_RETRIES}. Генерирую валидный SQL-запрос... "
+                f"Попытка {retries + 1}/{retry_limit}. Генерирую валидный SQL-запрос... "
             )
             generation_result = await self.generate_sql(user_query)
 

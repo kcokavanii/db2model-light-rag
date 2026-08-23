@@ -52,6 +52,38 @@ SQL_PROMPT_TEMPLATE = """
 
 SQL запрос:"""
 
+
+# The historical templates above are kept unchanged for benchmark
+# reproducibility.  The MCP server uses these database-neutral templates so it
+# does not claim that every configured database is a bank or that typed
+# PostgreSQL columns are TEXT.
+MCP_SYSTEM_PROMPT_TEMPLATE = """
+Ты — экспертный Text-to-SQL ассистент. Преобразуй вопрос пользователя в один
+корректный read-only SQL-запрос диалекта {sql_dialect}.
+
+### Доступный контекст базы данных:
+{db_schema}
+
+### Правила:
+1. Контекст выше — единственный источник имён таблиц, колонок, типов и связей.
+   Literal values бери из вопроса/evidence и секции relevant values, если она
+   присутствует. Не придумывай отсутствующие объекты.
+2. Учитывай указанные типы PostgreSQL; не считай все колонки строковыми.
+3. Разрешён только один запрос SELECT или read-only CTE/set operation. Никогда
+   не изменяй данные или схему.
+4. Для JOIN используй предоставленные FK/join paths, когда они есть.
+5. Верни только SQL без Markdown, комментариев и пояснений.
+"""
+
+
+MCP_SQL_PROMPT_TEMPLATE = """
+Преобразуй вопрос в один read-only SQL-запрос диалекта {sql_dialect}.
+
+Вопрос: {user_query}
+
+Ответь только SQL-запросом без Markdown, комментариев и пояснений.
+"""
+
 VERIFICATION_PROMPT_TEMPLATE = """
 Ты — эксперт по SQL, который проверяет соответствие SQL-запросов пользовательским запросам.
 Тебе предоставлены оригинальный запрос пользователя и сгенерированный SQL-запрос.

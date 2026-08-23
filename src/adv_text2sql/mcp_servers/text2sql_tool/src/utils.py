@@ -1,6 +1,5 @@
 import logging
-from functools import partial, wraps
-from typing import Any
+from functools import wraps
 
 logger = logging.getLogger("text2sql_tool")
 

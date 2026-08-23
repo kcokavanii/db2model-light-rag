@@ -1,6 +1,9 @@
-## Disclaimer
+# Самостоятельное развёртывание PostgreSQL
 
-Students, you don't need to read this, we already have a hosted database.
+Учебный PostgreSQL-сервер доступен только участникам с выданной личной учётной
+записью. Пользователю без такого доступа необходимо самостоятельно развернуть
+PostgreSQL и импортировать нужные базы. Эта папка содержит вспомогательные
+скрипты миграции, но не готовый `docker-compose.yml` и не сами datasets.
 
 ## Launching docker-compose
 
@@ -76,7 +79,8 @@ Finally, you can run the migration:
 ```
 In case one of the db's breaks, you can just delete it, just be mindful of the question datasets (both `dev` and `train`)
 
-#### *TODO: make this load envs from the environment*
+> Ограничение текущего служебного скрипта: параметры подключения в
+> `migrate.sh` задаются вручную и не загружаются из переменных окружения.
 
 ### AMBROSIA
 

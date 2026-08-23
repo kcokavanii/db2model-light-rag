@@ -1,167 +1,436 @@
 # AdvText2SQL
 
-This repository is made for testing student-written text2SQL tools with the help of different modern text2SQL benchmarks like BIRD and Ambrosia. BIRD benchmark tests **SQL generation**, while the Ambrosia benchmark tests for how a tool reacts to **ambiguity**.
+AdvText2SQL — исследовательский проект по преобразованию вопросов на естественном
+языке в PostgreSQL-запросы. В репозитории сравниваются два основных подхода:
 
-## Establishing connection with database
+- **baseline** — target-LLM получает полную схему базы данных;
+- **LightRAG** — перед генерацией SQL из графа знаний извлекается только
+  релевантная часть схемы.
 
-In order to connect to the database network, you need to type this command (requires a `user_name` and password from the teacher):
-```bash
-ssh -N -L 5444:10.11.1.6:5444 user_name@lnsigo.mipt.ru -p2278
-```
+Выбранные для основного сравнения базы BIRD: `toxicology`, `financial` и
+`codebase_community`. Зафиксированный evaluation-набор находится в
+`data/bird_large_filtered.json` и содержит 91 вопрос. История экспериментов,
+точные конфигурации и полученные EX/VES записаны в
+[`research_log.md`](research_log.md).
 
-You can check the database connection, and connect to the postgres database console with:
-```bash
-psql -d postgres -U benchmark --host=localhost  --port=5444
-```
+В конце pipeline выбранное решение упаковано в MCP-сервер. Он принимает вопрос,
+подбирает schema context и возвращает безопасный read-only SQL, который можно
+передать вызывающему приложению.
 
-You could try running a simple postgres console command like:
-```bash
-\l
-```
-This should list a pretty large number of databases like `attachment__some_number__some_name`.
+## Структура репозитория
 
-Then you can just type `exit` to exit:
-```bash
-exit
-```
+| Путь | Назначение |
+|---|---|
+| `src/adv_text2sql/` | Text-to-SQL и MCP-код |
+| `scripts/` | Извлечение знаний, M-Schema, граф, LightRAG и исследовательские запуски |
+| `benchmarks/` | Генерация ответов и расчёт BIRD/Ambrosia метрик |
+| `data/` | Локальные benchmark-наборы |
+| `artifacts/` | Сгенерированные знания, графы, storage и результаты запусков |
+| `tests/mcp/` | Локальные тесты MCP-маршрутизации и SQL safety |
+| `research_log.md` | Журнал гипотез, конфигураций и результатов |
 
-## Dependencies
+`artifacts/` исключён из Git. Артефакты эксперимента нужно хранить отдельно или
+добавлять в коммит только явно выбранные компактные сводки.
 
-Make sure you have `uv` installed:
-```bash
-pip install uv
-```
+## Установка
 
-## Install the repo
+Требования:
 
-```bash
+- Python 3.11 или новее;
+- `uv`;
+- доступ к PostgreSQL с read-only пользователем;
+- OpenAI-compatible endpoint для LLM;
+- интернет при первой загрузке embedding-модели `BAAI/bge-m3`.
+
+Установите `uv`, клонируйте репозиторий и установите зависимости:
+
+```powershell
+python -m pip install uv
 git clone https://github.com/deeppavlov/AdvText2SQL
-cd AdvText2SQL
+Set-Location AdvText2SQL
+uv sync --all-groups
 ```
 
-## LLM and database credentials
+Все дальнейшие команды выполняются из корня репозитория.
 
-After that, you need to add your LLM and database credentials. For that, copy the `.env.example` file
-to `.env`:
-```bash
-cp .env.example .env
-```
-and fill out all the variables listed there.
+Создайте локальный `.env`:
 
-## Choosing the dataset
-
-### BIRD
-
-Before running a benchmark you should choose which dataset you want to use. There are **two** datasets for the **BIRD** benchmark:
-- `data/bird_small.json` (22 questions) - this is a very small part of the **BIRD** benchmark's dev dataset. It's there, so you can save tokens and do things like debugging or estimating the efficiency of your tool as cheaply as possible. **You should probably use this one at first**, *unless* your model is free.
-- `data/bird_large.json` (241 questions) - this is our full **BIRD** benchmark's dev dataset. The baseline tool in this repo spends about 2M tokens on this (and that's in lightweight mode).
-
-To choose which BIRD benchmark dataset you're going to use, set the right file in the `bird_benchmark.py`:
-```python
-benchmark = BenchmarkBIRD(
-    db_url=db_url,
-    query_file="./data/bird_small.json",
-    answer_file="./data/bird_small.json",
-    use_evidence = True,
-)
+```powershell
+Copy-Item .env.example .env
 ```
 
-**evidence** is some additional data which might be useful to the LLM. For example, it could help decipher an abbreviation for the LLM model. Evidence right now just gets appended to the `user_request`. Only available in the BIRD benchmark, I suggest to use it.
+Заполните как минимум:
 
-### AMBROSIA
+```env
+DB_USER=benchmark
+DB_PASS=replace_me
+DB_HOST=localhost
+DB_PORT=5444
 
-The Ambrosia benchmark checks how your tool reacts to **ambiguity**. It has two testing datasets: `./data/ambrosia_large.json` (240 questions) and `./data/ambrosia_small.json` (24 questions)
-
-Usage is exactly the same as BIRD, you should use the small set of questions at first.
-
-## Running the benchmark
-
-Finally, you can run the BIRD benchmark with:
-```bash
-uv run --env-file .env bird_benchmark.py
-```
-And the Ambrosia benchmark with:
-```bash
-uv run --env-file .env ambrosia_benchmark.py
+LLM_MODEL_NAME=Qwen2.5-Coder-7B-Instruct
+LLM_BASE_URL=https://example.invalid/v1
+LLM_API_KEY=replace_me
 ```
 
-Additionally, after running the BIRD benchmark and generating queries, they are all saved in a file, so you can do the evaluation again to save tokens:
-```bash
-uv run --env-file .env bird_evaluate_only.py
+Для честного сравнения можно отдельно задать `TARGET_LLM_*` и
+`LIGHTRAG_LLM_*`. Если они не заданы, код использует соответствующие `LLM_*`
+значения. Не добавляйте `.env` и ключи в Git.
+
+## Подключение к PostgreSQL
+
+Репозиторий не содержит публичных реквизитов или дампа готового PostgreSQL-
+сервера. Доступ к `lnsigo.mipt.ru` есть только у участников учебного проекта,
+которым выданы личная учётная запись и пароль.
+
+### Если есть доступ к учебному серверу
+
+Откройте SSH-туннель в отдельном терминале, подставив имя своей личной учётной
+записи:
+
+```powershell
+ssh -N -L 5444:10.11.1.6:5444 user_name@lnsigo.mipt.ru -p 2278
 ```
-This could help in debugging the benchmark code (you can change the code to being more verbose in `benchmarks/evaluate_bird.py`, for example) or if you want to reuse yesterday's results without spending millions of tokens.
 
-There are also a few files made for debugging (they get created during both benchmarks):
-- `db_schemas.json` - contains the collected db schemas for every database connected.
-- `query_results.json` - contains your generated queries.
+После запуска `ssh` запросит пароль от личной учётной записи на
+`lnsigo.mipt.ru`. При вводе пароль не отображается в терминале — это нормальное
+поведение. SSH-пароль не является паролем PostgreSQL (`DB_PASS`), и его не нужно
+записывать в `.env`, команду или документацию.
 
-BIRD only logs:
-- `all_gold_results.json` - contains the results of gold queries execution.
-- `all_predicted_results.json` - contains the results of generated queries execution.
+Проверьте подключение:
 
-## Writing your own tool
+```powershell
+psql -d postgres -U benchmark --host localhost --port 5444
+```
 
-First, create your own `git` branch to store your tool code. You can create your own tool straight in the `text2sql_implementation.py` file, which contains the baseline tool. Please, don't make any commits to the `main` branch.
+В консоли PostgreSQL команда `\l` должна показать список баз. Выйти можно
+командой `\q`. Для pipeline и evaluation используйте read-only роль.
 
-You are free to use the baseline tool as an inspiration, but it's actually not that great (only 30% accuracy). Moreover, one of the goals of the course is to beat this exact baseline tool, so you'll probably need to rewrite that anyway.
+### Если доступа к учебному серверу нет
 
-Just make sure that your resulting tool class still has these methods:
-- the `__init__` method having the following signature: `__init__(db_url: str, llm_client: OpenAI)`. Basically, your tool class only needs to work with **one database** at a time. Check baseline tool for reference.
-- the `build()` method. This method will be called once for every tool instance at the start of a benchmark run. For example, you can obtain the `db_schema` of the databases within that method or add any other code you want to run during benchmark startup.
-- the `query(user_request: str) -> dict[str, Any]` method, which intakes the user request and outputs the generated SQL query. Output format:
-```python
-{
-    "status": "success",
-    "query": some_sql_query
+Необходимо самостоятельно развернуть PostgreSQL и импортировать в него базы
+BIRD, с которыми будет запускаться проект. Для воспроизведения основного
+эксперимента нужны базы `toxicology`, `financial` и `codebase_community`.
+
+Общий порядок:
+
+1. Установить или запустить PostgreSQL, например в Docker.
+2. Скачать BIRD dev с официального сайта и импортировать выбранные SQLite-базы
+   в PostgreSQL.
+3. Создать отдельного пользователя только для чтения и включить для него
+   `default_transaction_read_only`.
+4. Указать адрес собственного сервера и реквизиты read-only пользователя в
+   `DB_HOST`, `DB_PORT`, `DB_USER` и `DB_PASS` файла `.env`.
+5. Проверить, что имена баз в PostgreSQL совпадают с `db_id` в dataset.
+
+Черновые вспомогательные файлы миграции и служебная инструкция находятся в
+[`data/launch_db/`](data/launch_db/README.md). Это не готовый deployment:
+`docker-compose.yml`, данные BIRD и реквизиты доступа в репозиторий не входят.
+Пользователь получает dataset из официального источника, подготавливает
+конфигурацию PostgreSQL и разворачивает сервер самостоятельно.
+
+## Быстрый воспроизводимый pipeline для одной БД
+
+Ниже показан полный путь для `financial`. Часть шагов вызывает LLM и может быть
+платной; такие места отмечены явно.
+
+### 1. Извлечь структурированные знания из PostgreSQL
+
+```powershell
+uv run --env-file .env python scripts/explore_database.py --db financial
+```
+
+Результат:
+
+```text
+artifacts/db_knowledge/financial_knowledge.json
+```
+
+JSON содержит таблицы, колонки, типы, PK/FK, комментарии, статистики и до пяти
+примеров строк. Этот шаг читает схему и данные PostgreSQL, но LLM не вызывает.
+
+### 2. Построить M-Schema и семантические описания
+
+Рекомендуемая команда объединяет извлечение знаний и генерацию обеих схем:
+
+```powershell
+uv run --env-file .env python scripts/run_week2_exploration.py --db financial
+```
+
+Результаты:
+
+```text
+artifacts/db_knowledge/financial_knowledge.json
+artifacts/m_schemas/financial_m_schema.txt
+artifacts/m_schemas/financial_semantic.txt
+artifacts/generate_m_schema.log
+```
+
+`financial_m_schema.txt` создаётся детерминированно из JSON.
+`financial_semantic.txt` создаётся Teacher-LLM и расходует токены.
+
+Если JSON уже существует, генератор можно запустить отдельно:
+
+```powershell
+uv run --env-file .env python scripts/generate_m_schema.py `
+  --input artifacts/db_knowledge/financial_knowledge.json `
+  --output artifacts/m_schemas
+```
+
+### 3. Построить граф знаний
+
+Полный вариант с LLM-проверкой семантических связей:
+
+```powershell
+uv run --env-file .env python scripts/build_db_graph.py --db financial --inspect
+```
+
+Быстрый отладочный вариант без дополнительной LLM-проверки:
+
+```powershell
+uv run --env-file .env python scripts/build_db_graph.py --db financial --no-llm --inspect
+```
+
+Результаты:
+
+```text
+artifacts/graphs/financial_graph.pkl
+artifacts/graphs/financial_graph.graphml
+artifacts/graphs/financial_graph_stats.json
+```
+
+Флаг `--verify-all` проверяет через Teacher-LLM все найденные семантические
+кандидаты и стоит дороже. Для воспроизводимого сравнения обязательно фиксируйте,
+какой из трёх вариантов использован: default, `--no-llm` или `--verify-all`.
+
+### 4. Загрузить граф в LightRAG storage
+
+```powershell
+uv run --env-file .env python scripts/load_to_lightrag.py --db financial
+```
+
+Результаты появляются в `artifacts/lightrag/financial/`:
+
+```text
+graph_chunk_entity_relation.graphml
+kv_store_text_chunks.json
+vdb_chunks.json
+vdb_entities.json
+vdb_relationships.json
+```
+
+### 5. Вручную проверить retrieval
+
+```powershell
+uv run --env-file .env python scripts/query_lightrag.py `
+  --db financial `
+  --query "Какие счета относятся к восточной Богемии?"
+```
+
+Скрипт печатает извлечённый подграф и сформированные контексты в терминал. Он не
+создаёт новый артефакт. Keyword extraction может вызывать LLM.
+
+## Получение артефактов для всех выбранных БД
+
+Следующий PowerShell-фрагмент последовательно создаёт знания, M-Schema, графы и
+LightRAG storage для трёх основных БД:
+
+```powershell
+$databases = "toxicology", "financial", "codebase_community"
+
+foreach ($database in $databases) {
+    uv run --env-file .env python scripts/run_week2_exploration.py --db $database
+    uv run --env-file .env python scripts/build_db_graph.py --db $database
+    uv run --env-file .env python scripts/load_to_lightrag.py --db $database
 }
 ```
 
-In the real world some requests are going to be ambiguous - either too vague to create a query, out-of-scope of the database or maybe the request has several possible interpretations which affect the answer. Carefully consider how you will handle those queries, because the `query()` method must be ready for ambiguous requests. 
+Этот запуск вызывает Teacher-LLM и загружает embedding-модель. Перед полным
+запуском разумно пройти все шаги на одной БД и проверить файлы:
 
-In case the user request is ambiguous, the tool should return `{"status": "ambiguous"}`.
+```powershell
+Get-ChildItem artifacts -Recurse -File
+```
 
-Note that the generated queries must use the **PostgreSQL** dialect of SQL. Also, please, prepare your queries for being launched immediately - remove markdown blocks, validate the sql syntax. In case there is an error in your sql query, the score for that question will be zero.
+## Профилирование размера схем
 
-## Training datasets
+Скрипт отражает baseline-схему точно в том формате, который получает модель,
+считает токены `cl100k_base` и не читает строки таблиц и не вызывает LLM:
 
-There are also two training datasets in this repo:
-- `data/train_queries.json` - this is the BIRD benchmark's train dataset. It has questions labeled by difficulty and gold queries for each question. It has no ambiguous questions.
-- `data/ambrosia_train.json` - this is the Ambrosia benchmark's train dataset. It has both ambiguous and non-ambiguous questions. The file contains pairs `question` -> `ambig_type`, which you can use to train the tool. Secondly, there are `ambig_question` and `ambig_queries` fields for each `question_id`. Basically, it's `ambiguous_question` -> `possible queries`. So, it's like an additional dataset of ambiguous queries. You should check it out yourself to really get it.
+```powershell
+uv run --env-file .env python scripts/profile_bird_schemas.py `
+  --dataset data/bird_large_filtered.json `
+  --db toxicology financial codebase_community `
+  --output artifacts/schema_profiles/bird_large_filtered_schema_profile.csv
+```
 
-## Baseline tool results
+Результат:
 
-As of now, the average accuracy of the baseline tool using `gpt-3.5-turbo` is somewhere around 20-35% (didn't check the larger datasets, plus it's different for every benchmark run). This accuracy is quite low, but the official BIRD benchmark's website reports that this is close to the expected accuracy of directly using ChatGPT with a single prompt and nothing else, no additional procedures, no multi-agent, just nothing (which is what we're doing in the baseline tool).
+```text
+artifacts/schema_profiles/bird_large_filtered_schema_profile.csv
+```
 
-At the same time, ambiguity false positives on the BIRD dataset are around 20-30%.
+## BIRD baseline
 
-Ambiguity accuracy is in general hard to estimate, but results of running the small Ambrosia dataset were around 50-65%.
+Дешёвый ручной запуск: два вопроса `financial` из малого набора.
 
-#### TODO: run the benchmarks on large datasets
+```powershell
+$run = Get-Date -Format "yyyyMMdd_HHmmss"
+uv run --env-file .env python bird_benchmark.py `
+  --dataset data/bird_small.json `
+  --db financial `
+  --output-dir "artifacts/benchmarks/baseline/financial/$run"
+```
 
-## Some suggestions
+Полный зафиксированный набор из 91 вопроса:
 
-Here are a few suggestions for improving your tools. Be careful with some of them, you could just waste tokens or bloat the context if not careful.
+```powershell
+$run = Get-Date -Format "yyyyMMdd_HHmmss"
+uv run --env-file .env python bird_benchmark.py `
+  --dataset data/bird_large_filtered.json `
+  --output-dir "artifacts/benchmarks/baseline/all/$run"
+```
 
-- For starters, you should probably add the "db_schema", some "unique values" and maybe "row samples" into the model prompt. Without them the model **won't know** what the db looks like.
+Полный запуск платный и исполняет predicted и gold SQL для расчёта EX/VES.
+Папка, переданная через `--output-dir`, должна быть новой или пустой.
 
-- During the baseline tool's benchmarking, the model would often hallucinate non-existent table and column names. Consider trying to **execute** the generated query (with `sqlalchemy`), and giving the result back to the LLM for checking if it matches the `user_request` or if there were any errors. Then, the LLM will be given a chance to adjust it's answer if something's wrong.
-The process should repeat until there have been too many attempts, like 3-7. (or you'll just run out of tokens)
+Baseline создаёт:
 
-- During the baseline tool's benchmarking, the model would often perform poorly in terms of Postgres syntax. In particular, there were some quirks with `"SELECT DISTINCT"` and `"ORDER BY"` clauses that `sqlglot` validator passed as valid queries, but in reality they weren't. I think it could be a good idea to look closely at such spots where your model fails, then add more rules to your prompt, until the model is able to recognize those syntax rules.
+| Файл | Содержимое |
+|---|---|
+| `db_schemas.json` | Полные schema context, использованные генератором |
+| `query_results.json` | Сгенерированный SQL по `question_id` |
+| `all_gold_results.json` | Результаты исполнения gold SQL |
+| `all_predicted_results.json` | Результаты исполнения сгенерированного SQL |
+| `manual_check.json` | Построчное сравнение для ручной проверки |
+| `baseline.csv` | EX, VES, target prompt tokens и schema tokens |
 
-- Ambiguity checking seems to be rather difficult for `gpt-3.5-turbo`, and LLMs in general. In particular, beware of false positives - `gpt-3.5-turbo` would mark up to 50% of completely valid requests as ambiguous. It would probably be best to do some research on ambiguity checking, before starting to work on that feature.
+## BIRD + LightRAG Compact
 
-## Known issues
+Smoke-прогон на двух вопросах:
 
-Since the databases are hosted remotely via PostgreSQL, there are sometimes issues translating the SQLite dialect to PostgreSQL dialect. As a result, some gold queries could produce bad results, even though your tool's query is correct. So, don't get discouraged if your accuracy is slightly lower than the public text2sql tools. The accuracy penalty should be relatively small from that, though, as we filtered those queries a bit.
+```powershell
+uv run --env-file .env python scripts/run_week3_lightrag.py `
+  --db financial `
+  --question-ids 119 135
+```
 
-## Dev notes (students, skip)
+Полный прогон одной БД запускается без `--question-ids`:
 
-To host the database on a server, there are instructions and some files in the `data/launch_db/` directory, check out it's `README.md`.
+```powershell
+uv run --env-file .env python scripts/run_week3_lightrag.py --db financial
+```
 
-## Links
+Для всех трёх БД:
 
-We're using the BIRD benchmark's `dev` dataset, which can be found [here](https://bird-bench.github.io/).
-BIRD is an industrial-grade text2sql benchmark with cases that are close to real-world queries.
+```powershell
+$databases = "toxicology", "financial", "codebase_community"
 
-We're also using [Ambrosia](https://ambrosia-benchmark.github.io/) - a text2sql benchmark with a main focus on ambiguous requests.
+foreach ($database in $databases) {
+    uv run --env-file .env python scripts/run_week3_lightrag.py --db $database
+}
+```
+
+По умолчанию каждый прогон получает новую timestamp-папку:
+
+```text
+artifacts/benchmarks/lightrag/<db>/<YYYYMMDD_HHMMSS>/
+```
+
+В ней сохраняются:
+
+| Файл или папка | Содержимое |
+|---|---|
+| `bird_selected.json` | Точный snapshot выбранных вопросов |
+| `run_config.json` | Модели, commit, dirty-state и retrieval-конфигурация |
+| `lightrag_storage/` | Изолированная копия storage без общего keyword cache |
+| `db_schemas.json` | Контекст, переданный target-модели |
+| `contexts.json` | Retrieval diagnostics и размеры контекста по вопросам |
+| `query_results.json` | Сгенерированный SQL |
+| `all_gold_results.json` | Результаты gold SQL |
+| `all_predicted_results.json` | Результаты predicted SQL |
+| `manual_check.json` | Данные для ручной сверки EX |
+| `token_usage.json` | Target, retrieval и combined token usage |
+| `lightrag.csv` | Итоговые EX, VES и token budget |
+
+Текущий `run_week3_lightrag.py` измеряет **Compact**: найденные table, column и
+type без длинных семантических описаний. Он переиспользует baseline target prompt
+и evaluator; исследуемая переменная — schema context и дополнительный retrieval.
+
+Флаг `--reuse-keyword-cache` ускоряет повторный прогон, но делает его зависимым
+от ранее накопленного LLM cache. Для финального честного сравнения оставляйте
+default: скрипт создаст локальную копию storage без keyword cache.
+
+## MCP-сервер
+
+MCP-сервер находится в
+`src/adv_text2sql/mcp_servers/text2sql_tool`. Полная инструкция по переменным
+окружения, режимам `baseline`, `compact`, `structural`, `semantic_v3`, политике
+`auto`, формату ответа и ручному smoke-вызову находится в
+[`src/adv_text2sql/mcp_servers/text2sql_tool/README.md`](src/adv_text2sql/mcp_servers/text2sql_tool/README.md).
+
+Минимальный локальный запуск через `stdio`:
+
+```powershell
+uv run --env-file .env python -m src.adv_text2sql.mcp_servers.text2sql_tool.main --transport stdio
+```
+
+Ручной end-to-end вызов одного MCP tool:
+
+```powershell
+uv run --env-file .env python -m src.adv_text2sql.mcp_servers.text2sql_tool.smoke_client `
+  --question "Сколько счетов есть в базе?" `
+  --mode auto
+```
+
+MCP генерирует и статически проверяет SQL, а при включённой настройке выполняет
+только `EXPLAIN` без `ANALYZE`. Сам SQL он не исполняет и EX/VES не считает.
+Исполнение predicted и gold SQL и расчёт метрик выполняют benchmark-скрипты.
+Поэтому результаты baseline или LightRAG benchmark нельзя автоматически
+приписывать MCP: `auto` меняет формат контекста, а MCP использует отдельную
+версию prompt `mcp_v1`.
+
+## Остальные и экспериментальные точки входа
+
+- `scripts/extract_subgraph.py` — ранний локальный prototype retrieval. Он
+  использует жёстко заданный `artifacts/graphs/financial_graph.pkl`, печатает
+  четыре демонстрационных контекста и не создаёт файлы. В основном pipeline
+  вместо него используется `query_lightrag.py`.
+- `bird_evaluate_only.py` — повторно оценивает уже существующий
+  `query_results.json` в корне репозитория без нового LLM-вызова. Требует
+  `BENCHMARK_DB_URL=localhost:5444` и перезаписывает корневые
+  `all_gold_results.json`/`all_predicted_results.json`; для новых экспериментов
+  безопаснее использовать изолированные artifact-папки основных runner-ов.
+- `ambrosia_benchmark.py` — legacy smoke-run на `data/ambrosia_small.json`.
+  Он пишет `db_schemas.json` и `query_results.json` в текущую директорию и не
+  относится к зафиксированному сравнению LightRAG на BIRD.
+- `data/test_permissions.py` — проверка read-only роли PostgreSQL. Скрипт
+  намеренно пытается выполнить write-команды и безопасен только при корректно
+  настроенной read-only роли; требуется `BENCHMARK_DB_URL`.
+
+Подробное назначение каждого файла в `scripts/` и его параметры приведены в
+[`scripts/README.md`](scripts/README.md).
+
+## Проверки
+
+Локальные тесты MCP не вызывают LLM и не требуют PostgreSQL:
+
+```powershell
+uv run --group test python -m unittest discover -s tests/mcp -v
+uv run ruff check src/adv_text2sql/mcp_servers tests/mcp
+uv run pyrefly check src/adv_text2sql/mcp_servers
+```
+
+После изменения evaluation logic сначала проведите smoke-run на 1–2 вопросах и
+вручную сверьте `manual_check.json`. Не сравнивайте запуски с разными split,
+target-моделями, prompt-версиями или правилами подсчёта токенов как один
+эксперимент.
+
+## Данные и источники
+
+- BIRD dev: [bird-bench.github.io](https://bird-bench.github.io/)
+- Ambrosia: [ambrosia-benchmark.github.io](https://ambrosia-benchmark.github.io/)
+- `data/bird_small.json` — дешёвый smoke-набор;
+- `data/bird_large_filtered.json` — основной зафиксированный набор проекта;
+- `data/bird_large.json` — более широкий локальный набор;
+- `data/train_queries.json` и `data/ambrosia_train.json` — обучающие данные,
+  которые нельзя подмешивать в evaluation.
