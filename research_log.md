@@ -139,7 +139,7 @@ Eval-harness корректно обрабатывает все типы исх�
 
 **Этап Б: Внедрение R-VES и стабилизация eval-harness (27.07.2026)**
 
-1. **Реализация официальной метрики R-VES (Reward-based Valid Efficiency Score)**
+1. **Реализация метрики R-VES (Reward-based Valid Efficiency Score)**
    - *Изменения в `benchmarks/evaluate_bird.py`:*
      - Добавлена функция `clean_abnormal()` (правило 3-х сигм) для отсечения выбросов времени выполнения.
      - Внедрен многократный прогон (`iterate_num=5`) для корректных запросов с расчётом дискретной награды (0.25 – 1.25) на основе соотношения времени `gold_time / pred_time`.
@@ -391,10 +391,6 @@ question вместе с BIRD evidence, включать полную схему
   копия storage; кеши диагностических прогонов не переиспользовались.
 
 ##### Артефакты
-
-- `artifacts/benchmarks/lightrag/toxicology/20260812_184106`;
-- `artifacts/benchmarks/lightrag/financial/20260812_183216`;
-- `artifacts/benchmarks/lightrag/codebase_community/20260812_184751`.
 
 Проверка целостности прошла: все 91 question ID присутствуют в
 `query_results.json`, `contexts.json` и `manual_check.json`; пропусков и
@@ -685,16 +681,6 @@ Post-hoc комбинация «baseline для `toxicology`, compact для `fi
 недетерминированность backend-модели от drift кода и окружения. Нельзя выбирать
 один из прогонов как «лучший» или считать различие только следствием нового
 token accounting.
-
-Перед финальными выводами нужны:
-
-1. timestamped baseline-артефакты с `run_config.json`, commit, dirty-state,
-   моделью, параметрами и хешами фактических prompts/contexts;
-2. сохранение сырого LightRAG retrieval result и replay одного подграфа через
-   semantic и compact serializers;
-3. несколько target-повторов на идентичных входах с отчётом среднего,
-   диапазона и стабильности по question ID;
-4. отдельная интерпретация VES как метрики с временным шумом удалённой БД.
 
 #### Профиль размеров схем BIRD для проверки scale-гипотезы
 
